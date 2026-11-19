@@ -12,7 +12,7 @@ import {
   MapPinIcon,
   SpinnerIcon,
 } from "@/components/icons";
-import { PhotoThumb } from "@/components/photo-thumb";
+import { CheckoutPhotoTiles } from "@/components/checkout-photo-tiles";
 import {
   photosMissingText,
   priceCart,
@@ -396,56 +396,52 @@ export function CheckoutForm({
             </Link>
           </div>
 
-          <ul className="mt-3 grid gap-3">
-            {items.map((item) => (
-              <li key={item.uid} className="flex items-start gap-3">
-                <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
-                  {item.photos.length > 0 ? (
-                    item.photos.map((photo) => (
-                      <PhotoThumb
-                        key={photo.id}
-                        id={photo.id}
-                        alt={`Фото: ${item.label}`}
-                        size={56}
-                      />
-                    ))
-                  ) : (
-                    <span className="grid h-14 w-14 place-items-center rounded-[12px] border border-dashed border-line-strong text-[11.5px] text-ink-3">
-                      без фото
-                    </span>
-                  )}
-                </div>
-                <div className="min-w-0 flex-1 basis-40">
-                  <div className="text-[14px] font-semibold leading-5">
-                    {item.label} · {item.variantLabel}
-                    {item.quantity > 1 ? ` × ${item.quantity}` : ""}
+          <ul className="mt-3 grid gap-4">
+            {items.map((item) => {
+              const line = result.lines.find((entry) => entry.key === item.uid);
+              return (
+                <li key={item.uid} className="grid gap-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-[14px] font-semibold leading-5">
+                        {item.label} · {item.variantLabel}
+                        {item.quantity > 1 ? ` × ${item.quantity}` : ""}
+                      </div>
+                      {item.category === "other" ? (
+                        <div className="caption mt-1 line-clamp-2">
+                          {item.manualDescription || "Описание не заполнено"}
+                        </div>
+                      ) : null}
+                      {item.heavySoiling || item.secondSide ? (
+                        <div className="caption mt-0.5">
+                          {[
+                            item.heavySoiling ? "сильные загрязнения" : "",
+                            item.secondSide ? "две стороны" : "",
+                          ]
+                            .filter(Boolean)
+                            .join(", ")}
+                        </div>
+                      ) : null}
+                      <div className="caption mt-1">
+                        Фото {item.photos.length} / {maxPhotos}
+                      </div>
+                    </div>
+                    <div className="tabular whitespace-nowrap text-[14px] font-semibold">
+                      {item.category === "other"
+                        ? "По фото"
+                        : formatRub(line?.lineTotal ?? null)}
+                    </div>
                   </div>
-                  {item.category === "other" ? (
-                    <div className="caption mt-1 line-clamp-2">
-                      {item.manualDescription || "Описание не заполнено"}
-                    </div>
-                  ) : null}
-                  {item.heavySoiling || item.secondSide ? (
-                    <div className="caption mt-0.5">
-                      {[
-                        item.heavySoiling ? "сильные загрязнения" : "",
-                        item.secondSide ? "две стороны" : "",
-                      ]
-                        .filter(Boolean)
-                        .join(", ")}
-                    </div>
-                  ) : null}
-                </div>
-                <div className="tabular whitespace-nowrap text-[14px] font-semibold">
-                  {item.category === "other"
-                    ? "По фото"
-                    : formatRub(
-                        priceCart([item], tariffs, rules, false).lines[0]
-                          ?.lineTotal ?? null,
-                      )}
-                </div>
-              </li>
-            ))}
+
+                  <CheckoutPhotoTiles
+                    itemUid={item.uid}
+                    label={`${item.label} · ${item.variantLabel}`}
+                    photos={item.photos}
+                    max={maxPhotos}
+                  />
+                </li>
+              );
+            })}
           </ul>
 
           <div className="mt-4 border-t border-line pt-3">
@@ -482,20 +478,16 @@ export function CheckoutForm({
 
           {manualHasPhotoIssue ? (
             <p className="small mt-2 text-warn">
-              У «Другого» нет фото — добавьте его в корзине, иначе заявка не уйдёт.
+              У «Другого» нет фото — добавьте его в плитке позиции, иначе
+              заявка не уйдёт.
             </p>
           ) : null}
 
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-            <p className="caption">
-              Всего фото:{" "}
-              {items.reduce((sum, item) => sum + item.photos.length, 0)} · до{" "}
-              {maxPhotos} на позицию
-            </p>
-            <Link href="/cart" className="link text-[12.5px]">
-              Добавить ещё
-            </Link>
-          </div>
+          <p className="caption mt-2">
+            Всего фото:{" "}
+            {items.reduce((sum, item) => sum + item.photos.length, 0)} · до{" "}
+            {maxPhotos} на позицию
+          </p>
         </section>
 
         <div>

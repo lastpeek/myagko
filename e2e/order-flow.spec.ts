@@ -126,6 +126,51 @@ test("клиент собирает заказ, владелец согласу�
     fullPage: true,
   });
 
+  // Тёмная тема: плитки фото на оформлении
+  await page.getByRole("button", { name: "Сменить тему" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.waitForTimeout(400);
+
+  const armchairRow = page.locator("li", { hasText: "Кресло · Реклайнер" });
+  await expect(armchairRow.getByText("без фото")).toBeVisible();
+  await expect(armchairRow.getByText("Фото 0 / 3")).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Добавить ещё" }),
+  ).toHaveCount(0);
+  await page.screenshot({
+    path: "test-results/screens/checkout-390-dark-before.png",
+    fullPage: true,
+  });
+
+  const [chooser] = await Promise.all([
+    page.waitForEvent("filechooser"),
+    armchairRow
+      .getByRole("button", { name: /Добавить фото к позиции «Кресло/ })
+      .click(),
+  ]);
+  await chooser.setFiles(photoPath);
+
+  await expect(armchairRow.getByText("Фото 1 / 3")).toBeVisible();
+  await expect(
+    armchairRow.getByRole("button", { name: "Удалить фото" }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: "test-results/screens/checkout-390-dark-with-photo.png",
+    fullPage: true,
+  });
+
+  await armchairRow.getByRole("button", { name: "Удалить фото" }).click();
+  await expect(armchairRow.getByText("без фото")).toBeVisible();
+  await expect(armchairRow.getByText("Фото 0 / 3")).toBeVisible();
+  await page.screenshot({
+    path: "test-results/screens/checkout-390-dark-no-photo.png",
+    fullPage: true,
+  });
+
+  // Возвращаем светлую тему для остальных проверок
+  await page.getByRole("button", { name: "Сменить тему" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+
   await page.getByRole("button", { name: "Отправить заявку" }).click();
 
   await expect(page.getByText("Заявка отправлена")).toBeVisible({ timeout: 30_000 });

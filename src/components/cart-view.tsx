@@ -72,12 +72,10 @@ export function CartView({
 
   const result = priceCart(items, tariffs, rules, checkout.outOfTown);
 
-  const manualIncomplete = items.filter((item) => {
-    if (item.category !== "other") return false;
-    if (item.manualDescription.trim().length < 10) return true;
-    if (otherRequiresPhoto && item.photos.length === 0) return true;
-    return false;
-  });
+  const manualIncomplete = items.filter(
+    (item) =>
+      item.category === "other" && item.manualDescription.trim().length < 10,
+  );
 
   function handleRemove(item: CartItem) {
     const removedItem = removeItem(item.uid);
@@ -400,7 +398,8 @@ export function CartView({
 
       {manualIncomplete.length > 0 ? (
         <p className="small mt-3 text-warn" role="status">
-          У «Другого» нужно описание и фото — заполните в карточке позиции.
+          У «Другого» нужно описание — заполните в карточке. Фото можно добавить
+          на оформлении.
         </p>
       ) : null}
 

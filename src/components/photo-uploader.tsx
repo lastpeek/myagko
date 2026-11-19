@@ -144,7 +144,7 @@ export function PhotoUploader({
 
       {required && photos.length === 0 ? (
         <p className="small mt-2 text-warn">
-          Нужно хотя бы одно фото — без него заявка не уйдёт.
+          Нужно хотя бы одно фото. Можно добавить здесь или на оформлении.
         </p>
       ) : null}
 

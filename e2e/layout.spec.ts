@@ -1,4 +1,7 @@
 import { expect, test } from "@playwright/test";
+import path from "node:path";
+
+const photoPath = path.join(process.cwd(), "e2e", "fixtures", "photo.png");
 
 async function expectNoHorizontalScroll(page: import("@playwright/test").Page) {
   const overflow = await page.evaluate(() => {
@@ -158,6 +161,84 @@ test("корзина: минимум в трёх состояниях", async ({
     path: "test-results/screens/cart-min-other.png",
     fullPage: true,
   });
+});
+
+test("оформление: фото «Другого» обязательно, плитка не переполняется на 360/390/414", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.goto("/");
+  await page.getByRole("button", { name: /^Другое/ }).click();
+  await page.getByRole("button", { name: "В корзину" }).click();
+  await page.getByRole("link", { name: /Корзина/ }).click();
+  await page
+    .getByLabel("Что почистить")
+    .fill("Изголовье кровати и две подушки");
+  await page.getByRole("button", { name: "Оформить заявку" }).click();
+
+  await expect(page.getByRole("heading", { name: "Оформление" })).toBeVisible();
+  await page.getByRole("button", { name: "Сменить тему" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.waitForTimeout(400);
+
+  const warning = page.getByText(/У «Другого» нет фото/);
+  await expect(warning).toBeVisible();
+  await expect(page.getByRole("button", { name: "Отправить заявку" })).toBeDisabled();
+
+  const tile = page.getByRole("button", {
+    name: /Добавить фото к позиции «Другое/,
+  });
+  await expect(tile).toBeVisible();
+
+  await page.screenshot({
+    path: "test-results/screens/checkout-other-360-dark-before.png",
+    fullPage: true,
+  });
+
+  for (const width of [360, 390, 414]) {
+    await page.setViewportSize({ width, height: 800 });
+    const metrics = await tile.evaluate((el) => {
+      const span = el.querySelector("span") as HTMLElement;
+      const style = getComputedStyle(span);
+      return {
+        buttonScroll: el.scrollWidth,
+        buttonClient: el.clientWidth,
+        spanScroll: span.scrollWidth,
+        spanClient: span.clientWidth,
+        whiteSpace: style.whiteSpace,
+        textOverflow: style.textOverflow,
+        fontSize: style.fontSize,
+      };
+    });
+
+    expect(metrics.whiteSpace).toBe("nowrap");
+    expect(metrics.textOverflow).toBe("ellipsis");
+    expect(metrics.buttonScroll).toBeLessThanOrEqual(metrics.buttonClient);
+    expect(metrics.spanScroll).toBeLessThanOrEqual(metrics.spanClient);
+    expect(["10px", "11px"]).toContain(metrics.fontSize);
+    await expectNoHorizontalScroll(page);
+  }
+
+  await page.setViewportSize({ width: 360, height: 800 });
+
+  const [chooser] = await Promise.all([
+    page.waitForEvent("filechooser"),
+    tile.click(),
+  ]);
+  await chooser.setFiles(photoPath);
+
+  await expect(page.getByText("Фото 1 / 3")).toBeVisible();
+  await expect(warning).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Удалить фото" })).toBeVisible();
+  await page.screenshot({
+    path: "test-results/screens/checkout-other-360-dark.png",
+    fullPage: true,
+  });
+
+  await page.getByRole("button", { name: "Удалить фото" }).click();
+  await expect(warning).toBeVisible();
+  await expect(tile.getByText("без фото")).toBeVisible();
+  await expect(page.getByText("Фото 0 / 3")).toBeVisible();
 });
 
 test("service worker кеширует офлайн-экран", async ({ page }) => {
