@@ -1,0 +1,67 @@
+name: myagko
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-myagko}
+      POSTGRES_USER: ${POSTGRES_USER:-myagko}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Задайте POSTGRES_PASSWORD в .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-myagko} -d ${POSTGRES_DB:-myagko}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-myagko}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-myagko}
+      NEXT_PUBLIC_SITE_URL: https://${DOMAIN:?Задайте DOMAIN в .env}
+      AUTH_SECRET: ${AUTH_SECRET:?Задайте AUTH_SECRET в .env}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_MUST_CHANGE_PASSWORD: ${ADMIN_MUST_CHANGE_PASSWORD:-false}
+      PHOTO_STORAGE: local
+      PHOTO_STORAGE_DIR: /data/uploads
+      RUN_MIGRATIONS: "1"
+      SEED_ON_START: "1"
+    volumes:
+      - uploads:/data/uploads
+    healthcheck:
+      test:
+        ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  uploads:
+  caddy_data:
+  caddy_config:

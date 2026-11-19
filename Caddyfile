@@ -1,0 +1,9 @@
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Приватные страницы и API не кешируем на уровне прокси.
+	@private path /admin/* /z/* /api/*
+	header @private Cache-Control "no-store"
+
+	reverse_proxy app:3000
+}

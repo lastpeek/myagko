@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Мягко — визуальный референс</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#f7f4ef;
+  --surface:#ffffff;
+  --surface-2:#f1ede6;
+  --line:#e4ded4;
+  --line-strong:#d3cabc;
+  --ink:#191714;
+  --ink-2:#6d665c;
+  --ink-3:#9a9388;
+  --accent:#155c4c;
+  --accent-ink:#0f4a3d;
+  --accent-soft:#e3efe9;
+  --warn:#8a5a12;
+  --warn-soft:#f6e9d4;
+  --r-lg:20px;
+  --r-md:14px;
+  --r-sm:10px;
+  --shadow:0 1px 2px rgba(25,23,20,.04), 0 8px 24px -12px rgba(25,23,20,.12);
+  --f:"Onest",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+[data-theme="dark"]{
+  --paper:#141311;
+  --surface:#1c1a17;
+  --surface-2:#242119;
+  --line:#302c26;
+  --line-strong:#3d3830;
+  --ink:#f4f1ec;
+  --ink-2:#a8a199;
+  --ink-3:#7a7469;
+  --accent:#5fbf9f;
+  --accent-ink:#8ad6bb;
+  --accent-soft:#1d332c;
+  --warn:#d9a457;
+  --warn-soft:#2b2318;
+  --shadow:0 1px 2px rgba(0,0,0,.3), 0 12px 32px -16px rgba(0,0,0,.6);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:var(--f);
+  background:#e9e5dd;
+  color:var(--ink);
+  -webkit-font-smoothing:antialiased;
+  padding:56px 24px 96px;
+}
+.page{max-width:1320px;margin:0 auto}
+.sec-head{margin:0 0 28px}
+.sec-head .kicker{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#8a8377;font-weight:600}
+.sec-head h2{font-size:28px;letter-spacing:-.02em;margin-top:8px;font-weight:600}
+.sec-head p{color:#6d665c;margin-top:8px;font-size:15px;line-height:1.6;max-width:640px}
+.row{display:flex;gap:32px;flex-wrap:wrap;align-items:flex-start}
+.spacer{height:72px}
+
+/* ---------- phone ---------- */
+.phone{
+  width:390px;height:844px;border-radius:40px;overflow:hidden;
+  background:var(--paper);position:relative;flex:0 0 auto;
+  box-shadow:0 40px 80px -40px rgba(25,23,20,.45), 0 0 0 1px rgba(25,23,20,.08);
+  display:flex;flex-direction:column;
+}
+.status{height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 26px;font-size:12px;font-weight:600;color:var(--ink-2);flex:0 0 auto}
+.status .dots{display:flex;gap:5px;align-items:center}
+.status .dots i{display:block;width:5px;height:5px;border-radius:99px;background:var(--ink-3)}
+.scr{padding:0 20px;flex:1;overflow:hidden}
+.scr-foot{padding:14px 20px 26px;background:var(--paper);border-top:1px solid var(--line);flex:0 0 auto}
+
+/* ---------- typography ---------- */
+.h1{font-size:28px;line-height:1.15;letter-spacing:-.025em;font-weight:600}
+.h2{font-size:19px;line-height:1.3;letter-spacing:-.015em;font-weight:600}
+.sub{font-size:14px;line-height:1.55;color:var(--ink-2);margin-top:8px}
+.muted{font-size:13px;color:var(--ink-2)}
+.tiny{font-size:11.5px;color:var(--ink-3);letter-spacing:.01em}
+.num{font-variant-numeric:tabular-nums}
+
+/* ---------- brand ---------- */
+.brand{display:flex;align-items:center;gap:10px;padding:6px 0 20px}
+.logo{width:30px;height:30px;border-radius:9px;background:var(--accent);display:grid;place-items:center;flex:0 0 auto}
+.logo svg{width:16px;height:16px;fill:none;stroke:#fff;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+[data-theme="dark"] .logo svg{stroke:#0c1f19}
+.brand b{font-size:15px;font-weight:600;letter-spacing:-.01em}
+.brand span{font-size:12px;color:var(--ink-3);margin-left:auto}
+
+/* ---------- cards ---------- */
+.pick{
+  width:100%;display:flex;align-items:center;gap:14px;text-align:left;
+  padding:16px;border-radius:var(--r-lg);background:var(--surface);
+  border:1px solid var(--line);font-family:inherit;color:inherit;
+  transition:border-color .18s ease, background .18s ease, transform .18s ease;
+  margin-bottom:10px;cursor:pointer;
+}
+.pick:hover{border-color:var(--line-strong)}
+.pick.on{border-color:var(--accent);background:var(--accent-soft)}
+.pick .ic{width:46px;height:46px;border-radius:13px;background:var(--surface-2);display:grid;place-items:center;flex:0 0 auto}
+.pick.on .ic{background:var(--surface)}
+.pick .ic svg{width:24px;height:24px;fill:none;stroke:var(--ink);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.pick .tx{flex:1;min-width:0}
+.pick .tx b{display:block;font-size:15px;font-weight:600;letter-spacing:-.01em}
+.pick .tx span{display:block;font-size:12.5px;color:var(--ink-2);margin-top:3px}
+.pick .pr{font-size:14px;font-weight:600;white-space:nowrap}
+.pick .chev{color:var(--ink-3);flex:0 0 auto}
+.pick .chev svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 18px}
+.chip{
+  padding:9px 14px;border-radius:99px;border:1px solid var(--line);background:var(--surface);
+  font-family:inherit;font-size:13px;font-weight:500;color:var(--ink-2);cursor:pointer;
+  transition:.16s ease;
+}
+.chip.on{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+
+/* ---------- buttons ---------- */
+.btn{
+  width:100%;height:54px;border:0;border-radius:16px;background:var(--accent);color:#fff;
+  font-family:inherit;font-size:15px;font-weight:600;letter-spacing:-.01em;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  transition:transform .12s ease, background .18s ease;
+}
+[data-theme="dark"] .btn{color:#0d1f1a}
+.btn:active{transform:scale(.985)}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line-strong);height:46px;border-radius:13px;font-size:14px}
+.btn-sm{height:38px;padding:0 16px;border-radius:11px;font-size:13.5px;width:auto;background:var(--ink);color:var(--paper);border:0;font-family:inherit;font-weight:600;cursor:pointer}
+
+/* ---------- bottom bar ---------- */
+.bar-total{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px}
+.bar-total .lbl{font-size:12.5px;color:var(--ink-2)}
+.bar-total .val{font-size:21px;font-weight:600;letter-spacing:-.02em}
+
+/* ---------- cart rows ---------- */
+.item{display:flex;gap:12px;padding:14px 0;border-bottom:1px solid var(--line)}
+.item:last-of-type{border-bottom:0}
+.item .th{width:52px;height:52px;border-radius:12px;background:var(--surface-2);display:grid;place-items:center;flex:0 0 auto}
+.item .th svg{width:26px;height:26px;fill:none;stroke:var(--ink-2);stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
+.item .info{flex:1;min-width:0}
+.item .info b{font-size:14px;font-weight:600;display:block;letter-spacing:-.01em}
+.item .info span{font-size:12.5px;color:var(--ink-3);display:block;margin-top:2px}
+.item .right{text-align:right;flex:0 0 auto}
+.item .right .p{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+.stepper{display:inline-flex;align-items:center;gap:2px;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.stepper button{width:28px;height:26px;border:0;background:transparent;color:var(--ink-2);font-size:15px;cursor:pointer;font-family:inherit}
+.stepper span{min-width:22px;text-align:center;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+.item .meta{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
+.phchip{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px;border-radius:8px;
+  border:1px dashed var(--line-strong);background:transparent;color:var(--ink-3);
+  font-family:inherit;font-size:11.5px;font-weight:500;cursor:pointer;transition:.16s ease}
+.phchip svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.phchip:hover{border-color:var(--accent);color:var(--accent)}
+.phchip.on{border-style:solid;border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink)}
+[data-theme="dark"] .phchip.on{color:var(--accent-ink)}
+.sum{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;margin-top:16px}
+.sum .l{display:flex;justify-content:space-between;font-size:13.5px;color:var(--ink-2);padding:5px 0}
+.sum .l.tot{border-top:1px solid var(--line);margin-top:8px;padding-top:12px;color:var(--ink);font-size:15px;font-weight:600}
+.sum .l.tot .v{font-size:18px;letter-spacing:-.01em}
+.note{display:flex;gap:8px;align-items:flex-start;font-size:12px;line-height:1.5;color:var(--ink-2);margin-top:12px}
+.note svg{width:14px;height:14px;flex:0 0 auto;margin-top:1px;stroke:var(--accent);fill:none;stroke-width:1.8}
+
+/* ---------- form ---------- */
+.field{margin-bottom:12px}
+.field label{display:block;font-size:12.5px;font-weight:500;color:var(--ink-2);margin-bottom:7px}
+.field input,.field textarea{
+  width:100%;font-family:inherit;font-size:15px;color:var(--ink);background:var(--surface);
+  border:1px solid var(--line);border-radius:var(--r-md);padding:14px;outline:none;
+  transition:border-color .16s ease, box-shadow .16s ease;
+}
+.field input::placeholder,.field textarea::placeholder{color:var(--ink-3)}
+.field input:focus,.field textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.field .hint{font-size:11.5px;color:var(--ink-3);margin-top:6px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+/* upload */
+.upload{display:flex;gap:12px;align-items:center;width:100%;padding:13px 14px;
+  border:1px dashed var(--line-strong);border-radius:var(--r-md);background:var(--surface);
+  cursor:pointer;font-family:inherit;color:var(--ink-2);text-align:left;
+  transition:border-color .16s ease, background .16s ease}
+.upload:hover{border-color:var(--accent);background:var(--accent-soft)}
+.upload .uic{width:40px;height:40px;border-radius:11px;background:var(--accent-soft);display:grid;place-items:center;flex:0 0 auto}
+.upload:hover .uic{background:var(--surface)}
+.upload .uic svg{width:20px;height:20px;fill:none;stroke:var(--accent);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.upload .utx{flex:1;min-width:0}
+.upload .utx b{display:block;font-size:13.5px;font-weight:600;color:var(--ink);letter-spacing:-.01em}
+.upload .utx span{display:block;font-size:11.5px;color:var(--ink-3);margin-top:3px}
+.upload .cnt{font-size:12px;color:var(--ink-2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.thumbs{display:flex;gap:10px;margin-top:10px}
+.thumb{width:72px;height:72px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);position:relative;display:grid;place-items:center;overflow:hidden}
+.thumb svg{width:30px;height:30px;fill:none;stroke:var(--ink-3);stroke-width:1.3;stroke-linecap:round;stroke-linejoin:round}
+.thumb .x{position:absolute;top:-4px;right:-4px;width:22px;height:22px;border-radius:99px;background:var(--ink);color:var(--paper);font-size:13px;line-height:1;display:grid;place-items:center;border:2px solid var(--paper);font-family:inherit;cursor:pointer}
+.thumb .prog{position:absolute;left:0;bottom:0;height:2px;width:64%;background:var(--accent)}
+.addtile{width:72px;height:72px;border-radius:12px;border:1px dashed var(--line-strong);background:var(--surface);
+  display:grid;place-items:center;cursor:pointer;color:var(--ink-3);transition:.16s ease}
+.addtile:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.addtile svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.check{display:flex;gap:10px;align-items:flex-start;margin:14px 0 0;font-size:12px;line-height:1.5;color:var(--ink-2)}
+.check .box{width:18px;height:18px;border-radius:5px;background:var(--accent);display:grid;place-items:center;flex:0 0 auto;margin-top:1px}
+.check .box svg{width:11px;height:11px;stroke:#fff;stroke-width:2.4;fill:none}
+[data-theme="dark"] .check .box svg{stroke:#0d1f1a}
+
+/* ---------- success ---------- */
+.ok{width:64px;height:64px;border-radius:99px;background:var(--accent-soft);display:grid;place-items:center;margin:18px 0 18px}
+.ok svg{width:28px;height:28px;stroke:var(--accent);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.linkbox{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);padding:12px 14px;margin-top:14px}
+.linkbox span{font-size:12.5px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.kv{display:flex;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+.kv:last-child{border-bottom:0}
+.kv .k{color:var(--ink-2)}
+.kv .v{font-weight:600}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:99px;font-size:11.5px;font-weight:600;background:var(--accent-soft);color:var(--accent-ink)}
+[data-theme="dark"] .badge{color:var(--accent-ink)}
+.badge.w{background:var(--warn-soft);color:var(--warn)}
+.badge i{width:5px;height:5px;border-radius:99px;background:currentColor;display:block}
+
+/* ---------- desktop admin ---------- */
+.desk{width:1120px;border-radius:18px;background:var(--paper);box-shadow:0 40px 80px -40px rgba(25,23,20,.4),0 0 0 1px rgba(25,23,20,.08);overflow:hidden}
+.desk-top{height:52px;display:flex;align-items:center;gap:10px;padding:0 20px;border-bottom:1px solid var(--line);background:var(--surface)}
+.desk-top b{font-size:14px;font-weight:600}
+.desk-body{display:flex;min-height:560px}
+.side{width:216px;border-right:1px solid var(--line);padding:16px 12px;background:var(--surface);flex:0 0 auto}
+.navi{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;font-size:13.5px;color:var(--ink-2);margin-bottom:2px}
+.navi.on{background:var(--surface-2);color:var(--ink);font-weight:600}
+.navi .dot{width:5px;height:5px;border-radius:99px;background:var(--ink-3)}
+.navi.on .dot{background:var(--accent)}
+.main{flex:1;padding:24px 26px;min-width:0}
+.main-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.main-head h3{font-size:20px;letter-spacing:-.02em;font-weight:600}
+.tabs{display:flex;gap:18px;border-bottom:1px solid var(--line);margin-bottom:2px}
+.tab{padding:0 0 12px;font-size:13px;color:var(--ink-2);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab.on{color:var(--ink);border-color:var(--accent);font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);font-weight:600;padding:14px 10px 10px;border-bottom:1px solid var(--line)}
+td{padding:14px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:hover td{background:var(--surface)}
+td .nm{font-weight:600}
+td .sm{font-size:11.5px;color:var(--ink-3);margin-top:2px}
+td.r{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+
+/* ---------- style tile ---------- */
+.tile{background:var(--paper);border-radius:22px;padding:32px;box-shadow:0 30px 60px -40px rgba(25,23,20,.35),0 0 0 1px rgba(25,23,20,.06);width:560px}
+.swatches{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px}
+.sw{border-radius:12px;overflow:hidden;border:1px solid var(--line)}
+.sw .c{height:56px}
+.sw .n{padding:8px 10px;font-size:10.5px;color:var(--ink-2);background:var(--surface);letter-spacing:.02em}
+.type-row{display:flex;align-items:baseline;gap:16px;padding:9px 0;border-bottom:1px solid var(--line)}
+.type-row .spec{font-size:11px;color:var(--ink-3);margin-left:auto;white-space:nowrap}
+.legend{display:flex;flex-direction:column;gap:26px}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="sec-head">
+    <div class="kicker">Мягко · визуальный референс</div>
+    <h2>Как это должно выглядеть</h2>
+    <p>Спокойная светлая база, один глубокий зелёный акцент, крупные цифры и много воздуха. Никаких градиентов, стекла и эмодзи вместо иконок. Один макет — чтобы зафиксировать вкус до кода.</p>
+  </div>
+
+  <div class="row">
+
+    <!-- SCREEN 1 -->
+    <div class="phone">
+      <div class="status"><span>9:41</span><span class="dots"><i></i><i></i><i></i></span></div>
+      <div class="scr">
+        <div class="brand">
+          <div class="logo"><svg viewBox="0 0 24 24"><path d="M4 17v-4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v4"/><path d="M4 17h16"/><path d="M6 11V8a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v3"/><path d="M7 20v-3M17 20v-3"/></svg></div>
+          <b>Мягко</b><span>Новосибирск</span>
+        </div>
+        <div class="h1">Что почистим?</div>
+        <p class="sub">Предварительная цена — сразу. Точную мастер подтвердит после фото.</p>
+
+        <div style="height:20px"></div>
+
+        <button class="pick on">
+          <div class="ic"><svg viewBox="0 0 24 24"><path d="M3 18v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5"/><path d="M3 18h18"/><path d="M5 11V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v4"/><path d="M6 21v-3M18 21v-3"/></svg></div>
+          <div class="tx"><b>Диван</b><span>2, 3 места, угловой</span></div>
+          <div class="pr num">от 2 500 ₽</div>
+        </button>
+
+        <button class="pick">
+          <div class="ic"><svg viewBox="0 0 24 24"><path d="M5 17v-5.5a2 2 0 0 1 1.5-1.94L20 6.5V17"/><path d="M5 17h15"/><path d="M5 17v3"/><path d="M20 17v3"/><path d="M9 13v4"/></svg></div>
+          <div class="tx"><b>Кресло</b><span>Обычное или реклайнер</span></div>
+          <div class="pr num">от 1 200 ₽</div>
+        </button>
+
+        <button class="pick">
+          <div class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="11" rx="2"/><path d="M3 11h18"/><path d="M8 17v2M16 17v2"/></svg></div>
+          <div class="tx"><b>Матрас</b><span>Одна или две стороны</span></div>
+          <div class="pr num">от 1 500 ₽</div>
+        </button>
+
+        <button class="pick">
+          <div class="ic"><svg viewBox="0 0 24 24"><path d="M7 4h10l-1 6H8L7 4z"/><path d="M12 10v9"/><path d="M8 21h8"/></svg></div>
+          <div class="tx"><b>Стул</b><span>Сиденье или со спинкой</span></div>
+          <div class="pr num">от 500 ₽</div>
+        </button>
+
+        <button class="pick">
+          <div class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v8M8.5 10.5h7M8.5 13.5h7"/></svg></div>
+          <div class="tx"><b>Другое</b><span>Опишите и приложите фото</span></div>
+          <div class="pr" style="color:var(--ink-2);font-weight:500">по фото</div>
+        </button>
+
+        <div class="chips" style="margin-top:18px">
+          <button class="chip on">3 места</button>
+          <button class="chip">2 места</button>
+          <button class="chip">Угловой</button>
+        </div>
+      </div>
+      <div class="scr-foot">
+        <div class="bar-total">
+          <div><div class="lbl">Диван · 3 места</div><div class="tiny" style="margin-top:3px">Чистка, без выезда</div></div>
+          <div class="val num">3 200 ₽</div>
+        </div>
+        <button class="btn">В корзину</button>
+      </div>
+    </div>
+
+    <!-- SCREEN 2 -->
+    <div class="phone">
+      <div class="status"><span>9:41</span><span class="dots"><i></i><i></i><i></i></span></div>
+      <div class="scr">
+        <div class="brand">
+          <div class="logo"><svg viewBox="0 0 24 24"><path d="M4 17v-4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v4"/><path d="M4 17h16"/><path d="M6 11V8a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v3"/><path d="M7 20v-3M17 20v-3"/></svg></div>
+          <b>Заявка</b><span>2 предмета</span>
+        </div>
+
+        <div class="item">
+          <div class="th"><svg viewBox="0 0 24 24"><path d="M3 18v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5"/><path d="M3 18h18"/><path d="M5 11V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v4"/></svg></div>
+          <div class="info">
+            <b>Диван · 3 места</b><span>Сильные загрязнения</span>
+            <div class="meta">
+              <div class="stepper"><button>−</button><span class="num">1</span><button>+</button></div>
+              <button class="phchip on"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="12" cy="12" r="3"/></svg>Фото<svg viewBox="0 0 24 24" style="width:11px;height:11px;stroke-width:2.4"><path d="M5 12l4 4L19 6"/></svg></button>
+            </div>
+          </div>
+          <div class="right"><div class="p">4 160 ₽</div></div>
+        </div>
+
+        <div class="item">
+          <div class="th"><svg viewBox="0 0 24 24"><path d="M5 17v-5.5a2 2 0 0 1 1.5-1.94L20 6.5V17"/><path d="M5 17h15"/><path d="M5 17v3"/><path d="M20 17v3"/></svg></div>
+          <div class="info">
+            <b>Кресло · реклайнер</b><span>Без доплат</span>
+            <div class="meta">
+              <div class="stepper"><button>−</button><span class="num">1</span><button>+</button></div>
+              <button class="phchip"><svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg>Фото</button>
+            </div>
+          </div>
+          <div class="right"><div class="p">1 800 ₽</div></div>
+        </div>
+
+        <button class="btn ghost" style="margin-top:14px">+ Добавить предмет</button>
+
+        <div class="sum">
+          <div class="l"><span>Чистка</span><span class="num">5 960 ₽</span></div>
+          <div class="l"><span>Выезд по городу</span><span>бесплатно</span></div>
+          <div class="l tot"><span>Итого</span><span class="v num">5 960 ₽</span></div>
+        </div>
+
+        <div class="note">
+          <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="12" cy="12" r="3"/></svg>
+          <span>Фото 1 из 2. У кресла фото нет — цена по нему останется предварительной.</span>
+        </div>
+        <div class="note">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v5h1"/></svg>
+          <span>Минимальный заказ 2 500 ₽ — выполнен. Цены предварительные, итоговую стоимость мастер подтверждает после осмотра.</span>
+        </div>
+      </div>
+      <div class="scr-foot">
+        <button class="btn">Оформить заявку</button>
+      </div>
+    </div>
+
+    <!-- SCREEN 3 dark -->
+    <div class="phone" data-theme="dark">
+      <div class="status"><span>9:41</span><span class="dots"><i></i><i></i><i></i></span></div>
+      <div class="scr">
+        <div class="brand">
+          <div class="logo"><svg viewBox="0 0 24 24"><path d="M4 17v-4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v4"/><path d="M4 17h16"/><path d="M6 11V8a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v3"/><path d="M7 20v-3M17 20v-3"/></svg></div>
+          <b>Оформление</b><span>Шаг 2 из 2</span>
+        </div>
+
+        <div class="field"><label>Как вас зовут</label><input value="Анна"></div>
+        <div class="field"><label>Телефон</label><input value="+7 913 000-00-00"></div>
+        <div class="field"><label>Адрес</label><input placeholder="Улица, дом, квартира"><div class="hint">Мастер приедет по этому адресу</div></div>
+
+        <div class="two">
+          <div class="field"><label>Дата</label><input value="24 нояб."></div>
+          <div class="field"><label>Время</label><input placeholder="Любое"></div>
+        </div>
+
+        <div class="field">
+          <label>Фото</label>
+          <div class="thumbs">
+            <div class="thumb">
+              <svg viewBox="0 0 24 24"><path d="M3 18v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5"/><path d="M3 18h18"/><path d="M5 11V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v4"/></svg>
+              <button class="x">×</button>
+            </div>
+            <button class="addtile"><svg viewBox="0 0 24 24"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8z"/><circle cx="12" cy="13" r="3.2"/></svg></button>
+          </div>
+          <div class="hint">Диван — фото есть. У кресла фото нет: можно добавить сейчас или прислать позже по ссылке.</div>
+        </div>
+
+        <div class="check">
+          <div class="box"><svg viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg></div>
+          <div>Согласен на обработку персональных данных и с политикой конфиденциальности</div>
+        </div>
+      </div>
+      <div class="scr-foot">
+        <div class="bar-total">
+          <div class="lbl">Предварительно</div>
+          <div class="val num">5 960 ₽</div>
+        </div>
+        <button class="btn">Отправить заявку</button>
+      </div>
+    </div>
+
+    <!-- SCREEN 4 -->
+    <div class="phone">
+      <div class="status"><span>9:41</span><span class="dots"><i></i><i></i><i></i></span></div>
+      <div class="scr">
+        <div class="brand">
+          <div class="logo"><svg viewBox="0 0 24 24"><path d="M4 17v-4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v4"/><path d="M4 17h16"/><path d="M6 11V8a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v3"/><path d="M7 20v-3M17 20v-3"/></svg></div>
+          <b>Мягко</b><span>Новосибирск</span>
+        </div>
+
+        <div class="ok"><svg viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg></div>
+        <div class="h2">Заявка №1042 принята</div>
+        <p class="sub">Мастер свяжется по телефону и подтвердит время. Ссылка ниже обновляется, когда меняется статус.</p>
+
+        <div style="margin-top:18px">
+          <div class="kv"><span class="k">Статус</span><span class="v"><span class="badge"><i></i>Новая</span></span></div>
+          <div class="kv"><span class="k">Состав</span><span class="v">Диван 3м, кресло</span></div>
+          <div class="kv"><span class="k">Предварительно</span><span class="v num">5 960 ₽</span></div>
+          <div class="kv"><span class="k">Время</span><span class="v">уточняется</span></div>
+        </div>
+
+        <div class="linkbox">
+          <span>myagko.ru/z/8f3ka9m2</span>
+          <button class="btn-sm">Копировать</button>
+        </div>
+        <div class="tiny" style="margin-top:8px">Ссылка личная — не пересылайте её незнакомым</div>
+      </div>
+      <div class="scr-foot">
+        <button class="btn ghost">На главную</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="spacer"></div>
+
+  <!-- ADMIN -->
+  <div class="sec-head">
+    <div class="kicker">Кабинет владельца</div>
+    <h2>Спокойный рабочий стол, а не дашборд ради дашборда</h2>
+    <p>Та же палитра, плотная типографика, таблица вместо плиток. Всё важное — цена, статус, время — читается за секунду.</p>
+  </div>
+
+  <div class="desk">
+    <div class="desk-top">
+      <div class="logo"><svg viewBox="0 0 24 24"><path d="M4 17v-4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v4"/><path d="M4 17h16"/><path d="M6 11V8a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v3"/></svg></div>
+      <b>Мягко · кабинет</b>
+      <span class="tiny" style="margin-left:auto">Мастер: Игорь</span>
+    </div>
+    <div class="desk-body">
+      <div class="side">
+        <div class="navi on"><span class="dot"></span>Заявки</div>
+        <div class="navi"><span class="dot"></span>Тарифы</div>
+        <div class="navi"><span class="dot"></span>Компания</div>
+        <div class="navi"><span class="dot"></span>Доступ</div>
+        <div style="height:1px;background:var(--line);margin:14px 12px"></div>
+        <div class="tiny" style="padding:0 12px;line-height:1.6">Ссылка для клиентов<br><span style="color:var(--accent)">myagko.ru</span></div>
+      </div>
+      <div class="main">
+        <div class="main-head">
+          <h3>Заявки</h3>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input placeholder="Поиск по имени или телефону" style="font-family:inherit;font-size:13px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);width:240px;outline:none">
+            <button class="btn-sm">Обновить</button>
+          </div>
+        </div>
+        <div class="tabs">
+          <div class="tab on">Все · 12</div>
+          <div class="tab">Новые · 3</div>
+          <div class="tab">Согласованы · 5</div>
+          <div class="tab">Завершены · 4</div>
+        </div>
+        <table>
+          <tr><th>Клиент</th><th>Состав</th><th>Когда</th><th style="text-align:right">Сумма</th><th>Статус</th></tr>
+          <tr>
+            <td><div class="nm">Анна К.</div><div class="sm">+7 913 000-00-00</div></td>
+            <td><div class="nm">Диван 3м, кресло</div><div class="sm">фото 2 · сильные загрязнения</div></td>
+            <td><div class="nm">24 нояб.</div><div class="sm">14:00–16:00</div></td>
+            <td class="r">5 960 ₽</td>
+            <td><span class="badge"><i></i>Новая</span></td>
+          </tr>
+          <tr>
+            <td><div class="nm">Дмитрий П.</div><div class="sm">+7 923 111-22-33</div></td>
+            <td><div class="nm">Матрас 2 стороны</div><div class="sm">фото 1</div></td>
+            <td><div class="nm">24 нояб.</div><div class="sm">уточняется</div></td>
+            <td class="r">3 600 ₽</td>
+            <td><span class="badge"><i></i>Согласована</span></td>
+          </tr>
+          <tr>
+            <td><div class="nm">Ольга С.</div><div class="sm">+7 999 555-44-33</div></td>
+            <td><div class="nm">Угловой диван</div><div class="sm">фото 3 · без доплат</div></td>
+            <td><div class="nm">23 нояб.</div><div class="sm">10:00</div></td>
+            <td class="r">4 200 ₽</td>
+            <td><span class="badge"><i></i>Отменена</span></td>
+          </tr>
+          <tr>
+            <td><div class="nm">Ирина М.</div><div class="sm">+7 913 777-88-99</div></td>
+            <td><div class="nm">Стул со спинкой × 4</div><div class="sm">фото 1</div></td>
+            <td><div class="nm">22 нояб.</div><div class="sm">12:00</div></td>
+            <td class="r">2 800 ₽</td>
+            <td><span class="badge"><i></i>Завершена</span></td>
+          </tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="spacer"></div>
+
+  <!-- STYLE TILE -->
+  <div class="sec-head">
+    <div class="kicker">Основа</div>
+    <h2>Палитра, типографика, правила</h2>
+    <p>Всё, что ниже, идёт в <code style="font-family:ui-monospace,monospace;font-size:13px">DESIGN.md</code> и становится законом для разработчика.</p>
+  </div>
+
+  <div class="row">
+    <div class="tile" style="width:640px">
+      <div class="tiny" style="letter-spacing:.12em;text-transform:uppercase;font-weight:600">Палитра</div>
+      <div class="swatches" style="grid-template-columns:repeat(4,1fr)">
+        <div class="sw"><div class="c" style="background:#f7f4ef"></div><div class="n">paper · f7f4ef</div></div>
+        <div class="sw"><div class="c" style="background:#ffffff"></div><div class="n">surface · fff</div></div>
+        <div class="sw"><div class="c" style="background:#191714"></div><div class="n">ink · 191714</div></div>
+        <div class="sw"><div class="c" style="background:#155c4c"></div><div class="n">accent · 155c4c</div></div>
+        <div class="sw"><div class="c" style="background:#e4ded4"></div><div class="n">line · e4ded4</div></div>
+        <div class="sw"><div class="c" style="background:#6d665c"></div><div class="n">ink-2 · 6d665c</div></div>
+        <div class="sw"><div class="c" style="background:#e3efe9"></div><div class="n">soft · e3efe9</div></div>
+        <div class="sw"><div class="c" style="background:#8a5a12"></div><div class="n">warn · 8a5a12</div></div>
+      </div>
+
+      <div class="tiny" style="letter-spacing:.12em;text-transform:uppercase;font-weight:600;margin-top:28px">Типографика · Onest</div>
+      <div style="margin-top:10px">
+        <div class="type-row"><span style="font-size:28px;font-weight:600;letter-spacing:-.025em">Что почистим?</span><span class="spec">28 / 600 / −2.5%</span></div>
+        <div class="type-row"><span style="font-size:19px;font-weight:600;letter-spacing:-.015em">Заявка №1042 принята</span><span class="spec">19 / 600</span></div>
+        <div class="type-row"><span style="font-size:15px">Диван · 3 места</span><span class="spec">15 / 400</span></div>
+        <div class="type-row"><span style="font-size:13px;color:#6d665c">Предварительная цена — сразу</span><span class="spec">13 / 400</span></div>
+      </div>
+
+      <div class="tiny" style="letter-spacing:.12em;text-transform:uppercase;font-weight:600;margin-top:28px">Кнопки</div>
+      <div style="display:flex;gap:12px;margin-top:12px;align-items:center">
+        <button class="btn" style="width:auto;padding:0 22px">В корзину</button>
+        <button class="btn ghost" style="width:auto;padding:0 20px">Добавить</button>
+        <button class="btn-sm">Копировать</button>
+      </div>
+    </div>
+
+    <div class="tile" style="width:480px">
+      <div class="tiny" style="letter-spacing:.12em;text-transform:uppercase;font-weight:600">Запрещено</div>
+      <div class="legend" style="margin-top:16px;gap:14px">
+        <div style="display:flex;gap:12px"><span style="color:#8a5a12;font-weight:700">×</span><div><b style="font-size:14px">Градиенты и «стекло»</b><div class="muted" style="margin-top:3px">Ни фиолетовых, ни радужных. Стекло только если это осознанный акцент, не фон.</div></div></div>
+        <div style="display:flex;gap:12px"><span style="color:#8a5a12;font-weight:700">×</span><div><b style="font-size:14px">Эмодзи вместо иконок</b><div class="muted" style="margin-top:3px">Только SVG-иконки, единая толщина 1.5–1.7.</div></div></div>
+        <div style="display:flex;gap:12px"><span style="color:#8a5a12;font-weight:700">×</span><div><b style="font-size:14px">Тени на каждом блоке</b><div class="muted" style="margin-top:3px">Границы вместо теней. Тень — только у всплывающих слоёв.</div></div></div>
+        <div style="display:flex;gap:12px"><span style="color:#8a5a12;font-weight:700">×</span><div><b style="font-size:14px">Рекламные штампы</b><div class="muted" style="margin-top:3px">«Инновационное решение», «команда профессионалов», восклицательные знаки.</div></div></div>
+        <div style="display:flex;gap:12px"><span style="color:#8a5a12;font-weight:700">×</span><div><b style="font-size:14px">Мелкий серый текст</b><div class="muted" style="margin-top:3px">Минимум 13px и контраст не ниже 4.5:1.</div></div></div>
+      </div>
+      <div class="tiny" style="letter-spacing:.12em;text-transform:uppercase;font-weight:600;margin-top:26px">Правила</div>
+      <div class="legend" style="margin-top:14px;gap:12px">
+        <div class="muted">Сетка 4px. Отступ страницы 20px на телефоне, 24–32px на десктопе.</div>
+        <div class="muted">Радиусы: 20 карточка, 14 поле, 10 мелкое, 999 пилюля.</div>
+        <div class="muted">Один акцент. Максимум две «сильные» кнопки на экран.</div>
+        <div class="muted">Цифры всегда tabular-nums — чтобы суммы не прыгали.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
