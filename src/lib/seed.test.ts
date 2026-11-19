@@ -11,7 +11,7 @@ import {
   setAdminPassword,
 } from "@/lib/auth";
 import { closeDb, getDb, runMigrations } from "@/lib/db";
-import { adminUsers } from "@/lib/db/schema";
+import { adminUsers, tariffItems } from "@/lib/db/schema";
 import { seedDatabase } from "@/lib/seed-data";
 
 const DB_PATH = path.join(process.cwd(), ".data", "seed-test");
@@ -46,6 +46,42 @@ describe("сид владельца", () => {
 
     expect(rows[0]?.mustChangePassword).toBe(false);
     expect(rows[0]?.passwordChangedAt).not.toBeNull();
+  });
+
+  it("обновляет подписи вариантов, не трогая цену и видимость", async () => {
+    const db = getDb();
+
+    const seeded = await db
+      .select()
+      .from(tariffItems)
+      .where(eq(tariffItems.id, "chair-seat"));
+    expect(seeded[0]?.variantLabel).toBe("Только сиденье");
+
+    // Имитируем установку со старыми подписями и изменёнными ценой/видимостью
+    await db
+      .update(tariffItems)
+      .set({ variantLabel: "Сиденье", basePrice: 555, isActive: false })
+      .where(eq(tariffItems.id, "chair-seat"));
+    await db
+      .update(tariffItems)
+      .set({ variantLabel: "Сиденье со спинкой" })
+      .where(eq(tariffItems.id, "chair-back"));
+
+    await seedDatabase(db, { requireAdmin: false });
+
+    const seat = await db
+      .select()
+      .from(tariffItems)
+      .where(eq(tariffItems.id, "chair-seat"));
+    const back = await db
+      .select()
+      .from(tariffItems)
+      .where(eq(tariffItems.id, "chair-back"));
+
+    expect(seat[0]?.variantLabel).toBe("Только сиденье");
+    expect(seat[0]?.basePrice).toBe(555);
+    expect(seat[0]?.isActive).toBe(false);
+    expect(back[0]?.variantLabel).toBe("Сиденье и спинка");
   });
 
   it("переменная ADMIN_MUST_CHANGE_PASSWORD включает требование смены", async () => {

@@ -6,6 +6,7 @@ import { useMemo, useRef, useState } from "react";
 
 import {
   ArmchairIcon,
+  CameraIcon,
   ChairIcon,
   CheckIcon,
   ChevronRightIcon,
@@ -13,8 +14,9 @@ import {
   OtherIcon,
   SofaIcon,
 } from "@/components/icons";
-import { addItem } from "@/lib/cart-store";
+import { addItem, findItemByConfig, useCart } from "@/lib/cart-store";
 import { formatRub } from "@/lib/format";
+import { addFilesToItem } from "@/lib/photo-upload";
 import type { PublicTariff } from "@/lib/ui-types";
 
 const CATEGORY_ORDER = ["sofa", "armchair", "mattress", "chair", "other"] as const;
@@ -29,9 +31,9 @@ const CATEGORY_ICON = {
 
 const CATEGORY_HINT = {
   sofa: "2, 3 места, угловой",
-  armchair: "Обычное или реклайнер",
-  mattress: "Одна или две стороны",
-  chair: "Сиденье или со спинкой",
+  armchair: "Обычное или с откидной спинкой",
+  mattress: "С одной или двумя сторонами",
+  chair: "Только сиденье или весь стул",
   other: "Опишите и приложите фото",
 };
 
@@ -40,11 +42,13 @@ export function Configurator({
   heroTitle,
   heroSubtitle,
   minOrder,
+  maxPhotos,
 }: {
   tariffs: PublicTariff[];
   heroTitle: string;
   heroSubtitle: string;
   minOrder: number;
+  maxPhotos: number;
 }) {
   const categories = useMemo(
     () =>
@@ -64,7 +68,27 @@ export function Configurator({
   const [added, setAdded] = useState<{ id: number; label: string } | null>(null);
   const sequence = useRef(0);
 
+  const { items } = useCart();
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const photoTargetRef = useRef<string | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+
   const selected = tariffs.find((item) => item.id === selectedId) ?? null;
+
+  const selectedCartItem = selected
+    ? (items.find(
+        (item) =>
+          item.tariffId === selected.id &&
+          !item.heavySoiling &&
+          !item.secondSide &&
+          item.manualDescription === "",
+      ) ?? null)
+    : null;
+
+  const photoCount = selectedCartItem?.photos.length ?? 0;
+  const showPhotoAction = Boolean(selected && selected.category !== "other");
+  const canAddMorePhotos = photoCount < maxPhotos;
 
   function pickCategory(category: string) {
     const group = categories.find((entry) => entry.category === category);
@@ -74,21 +98,55 @@ export function Configurator({
     }
   }
 
-  function addToCart() {
-    if (!selected) return;
-    addItem({
+  function addSelectedToCart(): string | null {
+    if (!selected) return null;
+    return addItem({
       tariffId: selected.id,
       category: selected.category,
       label: selected.label,
       variantLabel: selected.variantLabel,
       quantity: 1,
     });
+  }
+
+  function addToCart() {
+    if (!selected) return;
+    addSelectedToCart();
     sequence.current += 1;
     setAdded({
       id: sequence.current,
       label: `${selected.label} · ${selected.variantLabel}`,
     });
     window.setTimeout(() => setAdded(null), 4000);
+  }
+
+  function startPhoto() {
+    if (!selected || selected.category === "other") return;
+
+    setPhotoError(null);
+    const existing = findItemByConfig({ tariffId: selected.id });
+    const uid = existing?.uid ?? addSelectedToCart();
+    if (!uid) return;
+
+    photoTargetRef.current = uid;
+    photoInputRef.current?.click();
+  }
+
+  async function handlePhotoFiles(files: FileList | null) {
+    const target = photoTargetRef.current;
+
+    if (!files || files.length === 0) {
+      if (photoInputRef.current) photoInputRef.current.value = "";
+      return;
+    }
+    if (!target) return;
+
+    setPhotoBusy(true);
+    const uploadError = await addFilesToItem(target, files, maxPhotos);
+    setPhotoError(uploadError);
+    setPhotoBusy(false);
+    photoTargetRef.current = null;
+    if (photoInputRef.current) photoInputRef.current.value = "";
   }
 
   const priceLabel = selected
@@ -212,7 +270,9 @@ export function Configurator({
                 </span>
               </div>
               <p className="caption mt-4">
-                Точную цену мастер подтвердит после фото. Фото добавите в корзине.
+                {selected?.isManual
+                  ? "Для «Другого» описание и фото добавите в корзине."
+                  : "Точную цену мастер подтвердит после фото. Снимок можно добавить сразу."}
               </p>
             </div>
           </aside>
@@ -220,28 +280,83 @@ export function Configurator({
       </div>
 
       <div className="sticky bottom-0 z-20 mt-8 border-t border-line bg-paper">
-        <div className="mx-auto w-full max-w-[1120px] px-5 py-3.5 pb-[max(14px,env(safe-area-inset-bottom))] md:flex md:items-center md:gap-6 md:px-8 lg:px-10">
-          <div className="flex items-baseline justify-between gap-3 md:flex-1">
-            <div className="min-w-0">
-              <div className="truncate text-[12.5px] leading-4 text-ink-2">
-                {selected ? `${selected.label} · ${selected.variantLabel}` : "Выберите мебель"}
+        <div className="mx-auto w-full max-w-[1120px] px-5 py-3.5 pb-[max(14px,env(safe-area-inset-bottom))] md:px-8 lg:px-10">
+          {photoError ? (
+            <p
+              role="alert"
+              className="mb-2 max-w-[60ch] text-[12px] leading-4 text-danger"
+            >
+              {photoError}
+            </p>
+          ) : null}
+
+          <div className="md:flex md:items-center md:gap-6">
+            <div className="flex items-baseline justify-between gap-3 md:block md:flex-1">
+              <div className="min-w-0">
+                <div className="truncate text-[12.5px] leading-4 text-ink-2">
+                  {selected
+                    ? `${selected.label} · ${selected.variantLabel}`
+                    : "Выберите мебель"}
+                </div>
+                <div className="caption mt-0.5 truncate">
+                  {selected?.isManual
+                    ? "Цену назовёт мастер"
+                    : "Чистка, без выезда"}
+                </div>
+                {photoCount > 0 ? (
+                  <div
+                    className="tabular mt-0.5 text-[12px] leading-4 text-ink-2"
+                    aria-live="polite"
+                  >
+                    фото {photoCount} / {maxPhotos}
+                  </div>
+                ) : null}
               </div>
-              <div className="caption mt-0.5 truncate">
-                {selected?.isManual ? "Цену назовёт мастер" : "Чистка, без выезда"}
+              <div className="tabular whitespace-nowrap text-[21px] font-semibold tracking-[-0.02em]">
+                {priceLabel || "—"}
               </div>
             </div>
-            <div className="tabular whitespace-nowrap text-[21px] font-semibold tracking-[-0.02em]">
-              {priceLabel || "—"}
+
+            <div className="mt-2.5 flex items-stretch gap-2.5 md:mt-0">
+              <button
+                type="button"
+                onClick={addToCart}
+                disabled={!selected}
+                className="btn btn-primary w-auto min-w-0 flex-1 md:flex-none md:px-8"
+              >
+                В корзину
+              </button>
+
+              {showPhotoAction && canAddMorePhotos ? (
+                <button
+                  type="button"
+                  onClick={startPhoto}
+                  disabled={photoBusy}
+                  aria-busy={photoBusy}
+                  aria-label="Добавить фото"
+                  className="btn btn-secondary h-[54px] min-h-[54px] w-[54px] flex-none border-line-strong px-0 min-[390px]:w-auto min-[390px]:px-3 md:h-12 md:min-h-12"
+                >
+                  <CameraIcon className="h-5 w-5" />
+                  <span className="hidden min-[390px]:inline">
+                    {photoCount > 0 ? "Ещё фото" : "Добавить фото"}
+                  </span>
+                </button>
+              ) : null}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={addToCart}
-            disabled={!selected}
-            className="btn btn-primary mt-2.5 w-full md:mt-0 md:w-auto md:px-8"
-          >
-            В корзину
-          </button>
+
+          {showPhotoAction ? (
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              multiple
+              aria-label="Фото к выбранной позиции"
+              className="sr-only"
+              tabIndex={-1}
+              onChange={(event) => void handlePhotoFiles(event.target.files)}
+            />
+          ) : null}
         </div>
       </div>
 

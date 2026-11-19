@@ -64,6 +64,7 @@ export default async function HomePage() {
             heroTitle={company.heroTitle}
             heroSubtitle={company.heroSubtitle}
             minOrder={rules.minOrder}
+            maxPhotos={settings.maxPhotosPerItem}
           />
         </div>
 

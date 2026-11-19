@@ -88,7 +88,7 @@ export const DEFAULT_TARIFFS = [
     id: "chair-seat",
     category: "chair" as const,
     label: "Стул",
-    variantLabel: "Сиденье",
+    variantLabel: "Только сиденье",
     basePrice: 500,
     allowsSoiling: true,
     allowsSecondSide: false,
@@ -98,7 +98,7 @@ export const DEFAULT_TARIFFS = [
     id: "chair-back",
     category: "chair" as const,
     label: "Стул",
-    variantLabel: "Сиденье со спинкой",
+    variantLabel: "Сиденье и спинка",
     basePrice: 700,
     allowsSoiling: true,
     allowsSecondSide: false,
@@ -175,6 +175,15 @@ export async function seedDatabase(
         isActive: true,
       })
       .onConflictDoNothing();
+  }
+
+  // Подписи вариантов могли измениться в шаблоне. Обновляем только текст:
+  // цены, видимость и флаги существующих строк не трогаем.
+  for (const item of DEFAULT_TARIFFS) {
+    await db
+      .update(tariffItems)
+      .set({ variantLabel: item.variantLabel })
+      .where(eq(tariffItems.id, item.id));
   }
 
   const email = process.env.ADMIN_EMAIL?.trim().toLowerCase();

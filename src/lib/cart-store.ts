@@ -171,13 +171,12 @@ export function addItem(input: {
   const heavySoiling = Boolean(input.heavySoiling);
   const secondSide = Boolean(input.secondSide);
 
-  const existing = state.items.find(
-    (item) =>
-      item.tariffId === input.tariffId &&
-      item.heavySoiling === heavySoiling &&
-      item.secondSide === secondSide &&
-      item.manualDescription === manualDescription,
-  );
+  const existing = findItemByConfig({
+    tariffId: input.tariffId,
+    heavySoiling,
+    secondSide,
+    manualDescription,
+  });
 
   if (existing) {
     state = {
@@ -238,6 +237,29 @@ export function restoreItem(item: CartItem): void {
   state = { ...state, items: [...state.items, item] };
   persist();
   emit();
+}
+
+/** Позиция с такой же конфигурацией — для «добавить фото, не добавляя ещё раз». */
+export function findItemByConfig(input: {
+  tariffId: string;
+  heavySoiling?: boolean;
+  secondSide?: boolean;
+  manualDescription?: string;
+}): CartItem | null {
+  const manualDescription = (input.manualDescription ?? "").trim();
+  return (
+    state.items.find(
+      (item) =>
+        item.tariffId === input.tariffId &&
+        item.heavySoiling === Boolean(input.heavySoiling) &&
+        item.secondSide === Boolean(input.secondSide) &&
+        item.manualDescription === manualDescription,
+    ) ?? null
+  );
+}
+
+export function getItem(uid: string): CartItem | null {
+  return state.items.find((item) => item.uid === uid) ?? null;
 }
 
 export function setQuantity(uid: string, quantity: number): void {

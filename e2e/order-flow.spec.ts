@@ -18,8 +18,13 @@ test("брошенная корзина не оставляет файлов н�
   await page.getByRole("button", { name: /^Диван/ }).click();
   await page.getByRole("button", { name: "В корзину" }).click();
   await page.getByRole("link", { name: /Корзина/ }).click();
+  await expect(page.getByRole("heading", { name: "Заявка", level: 1 })).toBeVisible();
 
-  await page.locator('input[type="file"]').first().setInputFiles(photoPath);
+  await page
+    .locator("article")
+    .first()
+    .locator('input[type="file"]')
+    .setInputFiles(photoPath);
   await expect(page.getByText("1 / 3").first()).toBeVisible();
 
   await page.reload();
