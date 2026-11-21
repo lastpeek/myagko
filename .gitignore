@@ -19,3 +19,6 @@ blob-report/
 leads-*.csv
 leads-report.md
 .env*
+
+partners-*.csv
+partners-report.md
