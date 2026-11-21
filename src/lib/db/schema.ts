@@ -128,6 +128,21 @@ export const tariffItems = pgTable(
   (table) => [index("tariff_items_sort_idx").on(table.sortOrder)],
 );
 
+export const galleryPhotos = pgTable(
+  "gallery_photos",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    storageKey: text("storage_key").notNull().unique(),
+    caption: text("caption").notNull().default(""),
+    sortOrder: integer("sort_order").notNull().default(0),
+    isVisible: boolean("is_visible").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index("gallery_photos_order_idx").on(table.sortOrder)],
+);
+
 export const orders = pgTable(
   "orders",
   {

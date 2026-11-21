@@ -191,3 +191,23 @@ export const updateCompanySchema = z.object({
 });
 
 export type UpdateCompanyInput = z.infer<typeof updateCompanySchema>;
+
+export const galleryUpdateSchema = z
+  .object({
+    caption: z
+      .string()
+      .trim()
+      .max(80, "Не длиннее 80 символов")
+      .optional(),
+    isVisible: z.boolean().optional(),
+    move: z.enum(["up", "down"]).optional(),
+  })
+  .refine(
+    (value) =>
+      value.caption !== undefined ||
+      value.isVisible !== undefined ||
+      value.move !== undefined,
+    { message: "Нет изменений" },
+  );
+
+export type GalleryUpdate = z.infer<typeof galleryUpdateSchema>;

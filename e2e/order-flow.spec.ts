@@ -14,6 +14,10 @@ function dateIn(days: number): string {
 test.describe.configure({ mode: "serial" });
 
 test("брошенная корзина не оставляет файлов на сервере", async ({ page }) => {
+  const filesBefore = fs.existsSync(uploadsDir)
+    ? fs.readdirSync(uploadsDir).length
+    : 0;
+
   await page.goto("/");
   await page.getByRole("button", { name: /^Диван/ }).click();
   await page.getByRole("button", { name: "В корзину" }).click();
@@ -35,7 +39,7 @@ test("брошенная корзина не оставляет файлов н�
   await page.waitForTimeout(500);
 
   const files = fs.existsSync(uploadsDir) ? fs.readdirSync(uploadsDir) : [];
-  expect(files).toHaveLength(0);
+  expect(files.length).toBe(filesBefore);
 });
 
 test("клиент собирает заказ, владелец согласует, клиент видит изменения", async ({

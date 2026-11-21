@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { Configurator } from "@/components/configurator";
+import { GallerySection } from "@/components/gallery-section";
 import { ChevronRightIcon, PhoneIcon } from "@/components/icons";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
@@ -11,7 +12,9 @@ import {
   toPublicTariff,
   toPricingRules,
 } from "@/lib/company";
+import { getDb } from "@/lib/db";
 import { formatRub } from "@/lib/format";
+import { listGalleryPhotos } from "@/lib/gallery";
 import { formatPhone, normalizePhone, phoneHref } from "@/lib/phone";
 
 export const dynamic = "force-dynamic";
@@ -25,10 +28,11 @@ const CATEGORY_LABEL: Record<string, string> = {
 };
 
 export default async function HomePage() {
-  const [company, tariffRows, settings] = await Promise.all([
+  const [company, tariffRows, settings, gallery] = await Promise.all([
     getCompany(),
     getActiveTariffItems(),
     getSettings(),
+    listGalleryPhotos(getDb(), { visibleOnly: true }),
   ]);
 
   const tariffs = tariffRows.map(toPublicTariff);
@@ -146,6 +150,19 @@ export default async function HomePage() {
             </div>
           </div>
         </section>
+
+        {gallery.length > 0 ? (
+          <GallerySection
+            items={gallery.map((photo) => ({
+              id: photo.id,
+              src: `/api/gallery/${photo.id}`,
+              caption: photo.caption,
+              alt:
+                photo.caption.trim() ||
+                `Химчистка мебели, ${company.city}`,
+            }))}
+          />
+        ) : null}
 
         <section className="mx-auto mt-14 w-full max-w-[1120px] px-5 md:mt-20 md:px-8 lg:px-10">
           <div className="kicker">Как это работает</div>
