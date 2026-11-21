@@ -1,3 +1,5 @@
+import { after } from "next/server";
+
 import { getDb } from "@/lib/db";
 import { getSettings } from "@/lib/company";
 import { normalizePhoto, photoErrorMessage } from "@/lib/image";
@@ -13,6 +15,7 @@ import {
   rateLimitKey,
 } from "@/lib/rate-limit";
 import { createOrderSchema } from "@/lib/validation";
+import { notifyNewOrder } from "@/lib/telegram";
 import { apiError, json } from "@/lib/api";
 
 export const runtime = "nodejs";
@@ -113,6 +116,18 @@ export async function POST(request: Request) {
 
   try {
     const outcome = await createOrder(db, parsed.data, incoming, { settings });
+
+    const notify = async () => {
+      await notifyNewOrder(db, outcome.id);
+    };
+
+    try {
+      after(notify);
+    } catch {
+      // Вне request-scope (например, юнит-тест) отправляем без after.
+      void notify();
+    }
+
     return json(
       {
         token: outcome.token,

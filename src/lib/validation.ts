@@ -211,3 +211,10 @@ export const galleryUpdateSchema = z
   );
 
 export type GalleryUpdate = z.infer<typeof galleryUpdateSchema>;
+
+export const telegramChatSchema = z.object({
+  chatId: z
+    .string()
+    .trim()
+    .regex(/^-?\d{5,20}$/, "chat_id — это число, например 123456789"),
+});

@@ -52,6 +52,8 @@ npm run dev
 | `PHOTO_STORAGE` | `local` или `s3` |
 | `PHOTO_STORAGE_DIR` | Папка фото для `local` (вне `public/`) |
 | `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Приватный бакет для `s3` |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME` | Бот для уведомлений о заявках |
+| `TELEGRAM_WEBHOOK_SECRET` | Секрет webhook; без него webhook отвечает 503 |
 
 `.env` в репозиторий не попадает. Секретов в коде нет.
 
@@ -91,6 +93,7 @@ src/
     admin-orders.ts          список, статусы, история, удаление
     auth.ts rate-limit.ts    сессии, argon2id, анти-подбор
     storage.ts image.ts      приватные фото, sharp, S3/local
+    telegram.ts              коды подключения, webhook, уведомления
     cart-store.ts photo-store.ts  черновик: localStorage + IndexedDB
   config/company.ts          значения для первого сида
 scripts/                     миграции, сид, сброс пароля, E2E, ассеты
@@ -147,6 +150,32 @@ e2e/                         Playwright
   `is_visible = true`; скрытое и несуществующее отдают 404. Приватный
   `/api/photos/[id]` не менялся.
 - Удаление позиции удаляет оба файла из хранилища.
+
+## Telegram-уведомления
+
+1. Создайте бота у `@BotFather`, получите токен и username.
+2. Задайте `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME` и `TELEGRAM_WEBHOOK_SECRET`.
+3. При нажатии «Подключить Telegram» сервер сам вызывает `setWebhook` с URL
+   `<NEXT_PUBLIC_SITE_URL>/api/telegram/webhook` и секретом. Команда ниже — для
+   проверки или ручной перерегистрации:
+
+```bash
+curl "https://api.telegram.org/bot<TOKEN>/setWebhook" \
+  -d "url=https://<домен>/api/telegram/webhook" \
+  -d "secret_token=<TELEGRAM_WEBHOOK_SECRET>"
+```
+
+4. В кабинете → «Компания» → «Уведомления» нажмите «Подключить Telegram»,
+   откройте ссылку и нажмите Start. Или введите `chat_id` вручную.
+5. Кнопка «Отправить тестовое сообщение» проверяет связку.
+
+После подключения каждая новая заявка уходит в Telegram: номер, сумма, состав и
+ссылка на заявку в кабинете. Если цена ещё «по фото», так и написано. Фото,
+имя, телефон и адрес клиента в сообщение не попадают. Отправка не задерживает
+создание заявки: таймаут 3 секунды, ошибки только в лог. Повторная отправка с тем
+же idempotency key не дублирует сообщение — в заявке хранится `notified_at`.
+Код подключения одноразовый, живёт 15 минут. Если бот не настроен, блок в кабинете
+показывает это и не создаёт код.
 
 ## Безопасность
 

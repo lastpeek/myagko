@@ -144,6 +144,20 @@ export const galleryPhotos = pgTable(
   (table) => [index("gallery_photos_order_idx").on(table.sortOrder)],
 );
 
+export const telegramLinks = pgTable("telegram_links", {
+  id: integer("id").primaryKey(),
+  chatId: text("chat_id"),
+  username: text("username"),
+  code: text("code"),
+  codeExpiresAt: timestamp("code_expires_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export const orders = pgTable(
   "orders",
   {
@@ -167,6 +181,7 @@ export const orders = pgTable(
     agreedTimeFrom: text("agreed_time_from"),
     agreedTimeTo: text("agreed_time_to"),
     ownerNote: text("owner_note").notNull().default(""),
+    notifiedAt: timestamp("notified_at", { withTimezone: true }),
     priceSnapshot: jsonb("price_snapshot").$type<PriceSnapshot>().notNull(),
     breakdown: jsonb("breakdown").$type<OrderBreakdown>().notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })

@@ -1,7 +1,14 @@
 import type { Metadata } from "next";
 
 import { CompanyForm } from "@/components/admin/company-form";
+import { TelegramSettings } from "@/components/admin/telegram-settings";
 import { getCompany } from "@/lib/company";
+import { getDb } from "@/lib/db";
+import {
+  getBotUsername,
+  getTelegramLink,
+  isTelegramConfigured,
+} from "@/lib/telegram";
 
 export const metadata: Metadata = {
   title: "Компания",
@@ -11,7 +18,10 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AdminCompanyPage() {
-  const company = await getCompany();
+  const [company, telegram] = await Promise.all([
+    getCompany(),
+    getTelegramLink(getDb()),
+  ]);
 
   return (
     <div>
@@ -19,8 +29,17 @@ export default async function AdminCompanyPage() {
       <p className="small mt-1.5 max-w-[60ch] text-ink-2">
         Название, контакты и акцент. Эти данные видит клиент на сайте и в заявке.
       </p>
-      <div className="mt-4">
+      <div className="mt-4 grid gap-3">
         <CompanyForm company={company} />
+        <TelegramSettings
+          initial={{
+            configured: isTelegramConfigured(),
+            botUsername: getBotUsername(),
+            connected: Boolean(telegram.chatId),
+            chatId: telegram.chatId,
+            username: telegram.username,
+          }}
+        />
       </div>
     </div>
   );

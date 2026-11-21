@@ -563,8 +563,7 @@ describe("доступ и фото", () => {
   });
 });
 
-describe("rate limit", () => {
-  it("считает попытки в скользящем окне", async () => {
+describe("rate limit", () => {  it("считает попытки в скользящем окне", async () => {
     const db = getDb();
     const key = `test-${Date.now()}`;
 
