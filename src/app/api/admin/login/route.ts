@@ -60,9 +60,14 @@ export async function POST(request: Request) {
     );
   }
 
+  const accountLimit = (() => {
+    const value = Number(process.env.LOGIN_RATE_LIMIT ?? "5");
+    return Number.isFinite(value) && value > 0 ? value : 5;
+  })();
+
   const byAccount = await checkRateLimit(db, {
     key: rateLimitKey("login:account", `${ip}:${parsed.data.email}`),
-    limit: 5,
+    limit: accountLimit,
     windowMs: 15 * 60 * 1000,
   });
   if (!byAccount.allowed) {

@@ -133,6 +133,7 @@ export const galleryPhotos = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     storageKey: text("storage_key").notNull().unique(),
+    beforeStorageKey: text("before_storage_key"),
     caption: text("caption").notNull().default(""),
     sortOrder: integer("sort_order").notNull().default(0),
     isVisible: boolean("is_visible").notNull().default(true),

@@ -18,6 +18,8 @@ export type GalleryAdminItem = {
   caption: string;
   isVisible: boolean;
   previewUrl: string;
+  hasBefore: boolean;
+  beforePreviewUrl: string | null;
   createdAt: string;
 };
 
@@ -113,6 +115,10 @@ export function GalleryManager({
           Не публикуйте лица клиентов и адреса. Подпись и порядок можно изменить
           под каждым фото.
         </p>
+        <p className="small mt-1 max-w-[62ch] text-ink-2">
+          Снимите мебель с одного ракурса и с одинаковым светом — иначе сравнение
+          выглядит нечестно.
+        </p>
 
         <button
           type="button"
@@ -183,6 +189,7 @@ function GalleryCard({
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
   const [confirm, setConfirm] = useState(false);
+  const beforeInputRef = useRef<HTMLInputElement>(null);
 
   const dirty = caption.trim() !== photo.caption;
   const label = photo.caption || `Фото ${index + 1}`;
@@ -256,13 +263,85 @@ function GalleryCard({
     }
   }
 
+  async function uploadBefore(files: FileList | null) {
+    if (!files || files.length === 0) return;
+
+    setNotice(null);
+    setBusy(true);
+    try {
+      const prepared = await preparePhoto(files[0]!);
+      if (!prepared.ok) {
+        setNotice({ kind: "error", text: prepared.error });
+        return;
+      }
+
+      const form = new FormData();
+      form.append("file", prepared.photo.blob, "before.webp");
+
+      const response = await fetch(
+        `/api/admin/gallery/${photo.id}/before`,
+        { method: "POST", body: form },
+      );
+      const data = (await response.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+
+      if (!response.ok) {
+        setNotice({
+          kind: "error",
+          text: data?.error ?? "Не удалось загрузить фото до",
+        });
+        return;
+      }
+
+      setNotice({ kind: "ok", text: "Фото до добавлено" });
+      router.refresh();
+    } catch {
+      setNotice({ kind: "error", text: "Связь пропала. Попробуйте ещё раз." });
+    } finally {
+      setBusy(false);
+      if (beforeInputRef.current) beforeInputRef.current.value = "";
+    }
+  }
+
+  async function removeBefore() {
+    setBusy(true);
+    setNotice(null);
+    try {
+      const response = await fetch(
+        `/api/admin/gallery/${photo.id}/before`,
+        { method: "DELETE" },
+      );
+      const data = (await response.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+
+      if (!response.ok) {
+        setNotice({
+          kind: "error",
+          text: data?.error ?? "Не удалось убрать фото до",
+        });
+        return;
+      }
+
+      setNotice({ kind: "ok", text: "Фото до убрано" });
+      router.refresh();
+    } catch {
+      setNotice({ kind: "error", text: "Связь пропала. Попробуйте ещё раз." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <article
       data-photo-id={photo.id}
       className="card overflow-hidden"
       aria-label={label}
     >
-      <div className="relative aspect-square bg-surface-2">
+      <div className="px-3 pt-3 label text-ink-2">Фото после чистки</div>
+
+      <div className="relative mx-3 mt-1.5 aspect-square overflow-hidden rounded-[12px] bg-surface-2">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={photo.previewUrl}
@@ -275,9 +354,59 @@ function GalleryCard({
         {!photo.isVisible ? (
           <span className="badge badge-muted absolute left-2 top-2">Скрыто</span>
         ) : null}
+        {photo.hasBefore ? (
+          <span className="badge absolute right-2 top-2">до/после</span>
+        ) : null}
       </div>
 
-      <div className="grid gap-2.5 p-3">
+      <div className="mt-3 border-t border-line px-3 py-3">
+        <div className="label text-ink-2">
+          Фото до чистки — необязательно
+        </div>
+
+        {photo.hasBefore && photo.beforePreviewUrl ? (
+          <div className="mt-2 flex items-center gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={photo.beforePreviewUrl}
+              alt={`Фото до: ${label}`}
+              loading="lazy"
+              className="h-[72px] w-[72px] flex-none rounded-[12px] border border-line object-cover"
+            />
+            <button
+              type="button"
+              onClick={() => void removeBefore()}
+              disabled={busy}
+              className="btn btn-ghost min-h-11 w-auto px-3 text-[12.5px]"
+            >
+              Убрать фото до
+            </button>
+          </div>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={() => beforeInputRef.current?.click()}
+              disabled={busy}
+              className="mt-2 flex min-h-11 w-full items-center justify-center gap-2 rounded-[12px] border border-dashed border-line-strong bg-surface px-3 text-[12.5px] font-medium text-ink-2 transition-colors duration-[180ms] hover:border-accent hover:bg-accent-soft hover:text-accent-ink disabled:opacity-45"
+            >
+              <PlusIcon className="h-4 w-4" />
+              Добавить фото до
+            </button>
+            <input
+              ref={beforeInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              aria-label="Загрузить фото до"
+              className="sr-only"
+              tabIndex={-1}
+              onChange={(event) => void uploadBefore(event.target.files)}
+            />
+          </>
+        )}
+      </div>
+
+      <div className="grid gap-2.5 border-t border-line p-3">
         <div>
           <label
             htmlFor={`caption-${photo.id}`}

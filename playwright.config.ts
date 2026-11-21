@@ -7,6 +7,7 @@ const serverEnv = {
   DATABASE_URL: "pglite://.data/e2e",
   NEXT_PUBLIC_SITE_URL: baseURL,
   AUTH_SECRET: "e2e-secret-0123456789-abcdefghij",
+  LOGIN_RATE_LIMIT: "20",
   ADMIN_EMAIL: "owner@myagko.ru",
   ADMIN_PASSWORD: "Myagko-demo-2026",
   PHOTO_STORAGE: "local",

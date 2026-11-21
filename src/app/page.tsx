@@ -156,6 +156,9 @@ export default async function HomePage() {
             items={gallery.map((photo) => ({
               id: photo.id,
               src: `/api/gallery/${photo.id}`,
+              beforeSrc: photo.beforeStorageKey
+                ? `/api/gallery/${photo.id}/before`
+                : null,
               caption: photo.caption,
               alt:
                 photo.caption.trim() ||

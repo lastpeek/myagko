@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { GET as getGalleryImage } from "@/app/api/gallery/[id]/route";
+import { GET as getGalleryBeforeImage } from "@/app/api/gallery/[id]/before/route";
 import { closeDb, getDb, runMigrations } from "@/lib/db";
 import {
   createGalleryPhotos,
@@ -13,6 +14,8 @@ import {
   getGalleryPhoto,
   getPublicGalleryPhoto,
   listGalleryPhotos,
+  removeGalleryBeforePhoto,
+  setGalleryBeforePhoto,
   updateGalleryPhoto,
 } from "@/lib/gallery";
 import { getStorage } from "@/lib/storage";
@@ -119,8 +122,43 @@ describe("галерея работ", () => {
     expect(unchanged[0]?.id).toBe(first.id);
   });
 
-  it("публичный роут отдаёт видимое фото и 404 для скрытого", async () => {
+  it("загружает и убирает фото «до», скрытая позиция даёт 404 на оба файла", async () => {
     const db = getDb();
+    const [target] = await listGalleryPhotos(db);
+    const filesBefore = (await storedFiles()).length;
+
+    expect(await setGalleryBeforePhoto(db, target!.id, photo(77))).toBe(true);
+
+    const withBefore = await getGalleryPhoto(db, target!.id);
+    expect(withBefore?.beforeStorageKey).toBeTruthy();
+    expect((await storedFiles()).length).toBe(filesBefore + 1);
+
+    const beforeResponse = await getGalleryBeforeImage(
+      new Request(`http://localhost:3000/api/gallery/${target!.id}/before`),
+      { params: Promise.resolve({ id: target!.id }) },
+    );
+    expect(beforeResponse.status).toBe(200);
+
+    await updateGalleryPhoto(db, target!.id, { isVisible: false });
+
+    const hiddenAfter = await getGalleryImage(
+      new Request(`http://localhost:3000/api/gallery/${target!.id}`),
+      { params: Promise.resolve({ id: target!.id }) },
+    );
+    const hiddenBefore = await getGalleryBeforeImage(
+      new Request(`http://localhost:3000/api/gallery/${target!.id}/before`),
+      { params: Promise.resolve({ id: target!.id }) },
+    );
+    expect(hiddenAfter.status).toBe(404);
+    expect(hiddenBefore.status).toBe(404);
+
+    await updateGalleryPhoto(db, target!.id, { isVisible: true });
+    expect(await removeGalleryBeforePhoto(db, target!.id)).toBe(true);
+    expect((await getGalleryPhoto(db, target!.id))?.beforeStorageKey).toBeNull();
+    expect((await storedFiles()).length).toBe(filesBefore);
+  });
+
+  it("публичный роут отдаёт видимое фото и 404 для скрытого", async () => {    const db = getDb();
     const [first] = await listGalleryPhotos(db);
     const storage = getStorage();
 
@@ -159,14 +197,15 @@ describe("галерея работ", () => {
     expect(broken.status).toBe(404);
   });
 
-  it("удаление убирает строку и объект из хранилища", async () => {
+  it("удаление убирает строку и оба файла", async () => {
     const db = getDb();
     const [first] = await listGalleryPhotos(db);
+    await setGalleryBeforePhoto(db, first!.id, photo(88));
     const filesBefore = (await storedFiles()).length;
 
     expect(await deleteGalleryPhoto(db, first!.id)).toBe(true);
     expect(await getGalleryPhoto(db, first!.id)).toBeNull();
-    expect((await storedFiles()).length).toBe(filesBefore - 1);
+    expect((await storedFiles()).length).toBe(filesBefore - 2);
   });
 
   it("не даёт превысить лимит в 24 фото", async () => {

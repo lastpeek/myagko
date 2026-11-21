@@ -249,6 +249,7 @@ test("галерея: сетка 2/2/3 и обе темы без перепол�
 
   await page.goto("/");
   const grid = page.locator("[data-gallery-grid]");
+  await expect(page.getByRole("slider")).toHaveCount(0);
 
   for (const width of [360, 390]) {
     await page.setViewportSize({ width, height: 800 });
@@ -294,4 +295,281 @@ test("галерея: сетка 2/2/3 и обе темы без перепол�
     path: "test-results/screens/gallery-390-dark.png",
     fullPage: true,
   });
+});
+
+test("сравнение до/после: drag, клавиатура, лайтбокс, скрытие и удаление обоих файлов", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await page.goto("/admin/login");
+  await page.getByLabel("Почта").fill("owner@myagko.ru");
+  await page.getByLabel("Пароль").fill("Myagko-demo-2026");
+  await page.getByRole("button", { name: "Войти" }).click();
+  await expect(page.getByRole("heading", { name: "Заявки", level: 1 })).toBeVisible();
+  await page.goto("/admin/gallery");
+
+  while ((await page.locator("article[data-photo-id]").count()) > 0) {
+    const before = await page.locator("article[data-photo-id]").count();
+    await page
+      .locator("article[data-photo-id]")
+      .first()
+      .getByRole("button", { name: "Удалить фото" })
+      .click();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Удалить", exact: true })
+      .click();
+    await expect(page.locator("article[data-photo-id]")).toHaveCount(before - 1);
+  }
+
+  const buffer = fs.readFileSync(photoPath);
+  await page.getByLabel("Загрузить фото работ").setInputFiles([
+    { name: "pair-after.png", mimeType: "image/png", buffer },
+    { name: "plain-after.png", mimeType: "image/png", buffer },
+  ]);
+  await expect(page.locator("article[data-photo-id]")).toHaveCount(2);
+  expect(uploadCount()).toBe(2);
+
+  const firstCard = page.locator("article[data-photo-id]").first();
+  await firstCard
+    .getByLabel("Загрузить фото до")
+    .setInputFiles({ name: "pair-before.png", mimeType: "image/png", buffer });
+
+  await expect(firstCard.getByText("до/после", { exact: true })).toBeVisible();
+  await expect(firstCard.getByRole("button", { name: "Убрать фото до" })).toBeVisible();
+  expect(uploadCount()).toBe(3);
+  await page.screenshot({
+    path: "test-results/screens/admin-gallery-compare-390.png",
+    fullPage: true,
+  });
+
+  await page.goto("/");
+  const slider = page.getByRole("slider", {
+    name: "Сравнение до и после чистки",
+  });
+  await expect(slider).toHaveCount(1);
+  await expect(slider).toHaveAttribute("aria-valuenow", "50");
+  await expect(page.locator("[data-compare]").getByText("До", { exact: true })).toBeVisible();
+  await expect(
+    page.locator("[data-compare]").getByText("После", { exact: true }),
+  ).toBeVisible();
+  expect(await slider.evaluate((el) => getComputedStyle(el).touchAction)).toBe(
+    "none",
+  );
+
+  // Мышь: тянем разделитель влево
+  await page.locator("[data-compare]").scrollIntoViewIfNeeded();
+  const compareBox = await page.locator("[data-compare]").boundingBox();
+  await page.mouse.move(
+    compareBox!.x + compareBox!.width / 2,
+    compareBox!.y + compareBox!.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    compareBox!.x + compareBox!.width * 0.25,
+    compareBox!.y + compareBox!.height / 2,
+  );
+  await page.mouse.up();
+  await expect(slider).toHaveAttribute("aria-valuenow", /^2[0-9]$/);
+
+  // Клавиатура: шаг 2%, Home/End
+  await slider.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(slider).toHaveAttribute("aria-valuenow", /^(2[0-9]|3[0-2])$/);
+  await page.keyboard.press("Home");
+  await expect(slider).toHaveAttribute("aria-valuenow", "0");
+  await page.keyboard.press("End");
+  await expect(slider).toHaveAttribute("aria-valuenow", "100");
+  await page.keyboard.press("ArrowLeft");
+  await expect(slider).toHaveAttribute("aria-valuenow", "98");
+
+  // Лайтбокс: сравнение работает, листание — по краям
+  await page
+    .getByRole("button", { name: /Открыть фото/ })
+    .first()
+    .click({ position: { x: 16, y: 16 } });
+  const dialog = page.getByRole("dialog", { name: "Просмотр работ" });
+  await expect(dialog).toBeVisible();
+  const dialogSlider = dialog.getByRole("slider", {
+    name: "Сравнение до и после чистки",
+  });
+  await expect(dialogSlider).toBeVisible();
+  const dialogBox = await dialog.locator("[data-compare]").boundingBox();
+  await page.mouse.move(
+    dialogBox!.x + dialogBox!.width / 2,
+    dialogBox!.y + dialogBox!.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    dialogBox!.x + dialogBox!.width * 0.7,
+    dialogBox!.y + dialogBox!.height / 2,
+  );
+  await page.mouse.up();
+  await expect(dialogSlider).toHaveAttribute("aria-valuenow", /^[6-8][0-9]$/);
+  await expect(dialog.getByText("1 / 2")).toBeVisible();
+  await page.screenshot({
+    path: "test-results/screens/gallery-compare-lightbox-390.png",
+    fullPage: false,
+  });
+
+  await dialog.getByRole("button", { name: "Следующее фото" }).click();
+  await expect(dialog.getByText("2 / 2")).toBeVisible();
+  await expect(dialog.getByRole("slider")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+
+  // Ширины и темы: ползунок не ломает сетку
+  for (const width of [360, 390, 768, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expectNoHorizontalScroll(page);
+    await expect(slider).toBeVisible();
+  }
+
+  await page.screenshot({
+    path: "test-results/screens/gallery-compare-1280.png",
+    fullPage: true,
+  });
+
+  await page.getByRole("button", { name: "Сменить тему" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.waitForTimeout(400);
+
+  for (const width of [360, 390, 768, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expectNoHorizontalScroll(page);
+    await expect(slider).toBeVisible();
+  }
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectNoHorizontalScroll(page);
+  await page.screenshot({
+    path: "test-results/screens/gallery-compare-390-dark.png",
+    fullPage: true,
+  });
+
+  await page.getByRole("button", { name: "Сменить тему" }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  // Скрытие: 404 на оба файла
+  await page.goto("/admin/gallery");
+  const hiddenId = await page
+    .locator("article[data-photo-id]")
+    .first()
+    .getAttribute("data-photo-id");
+  expect(hiddenId).toBeTruthy();
+  await page
+    .locator("article[data-photo-id]")
+    .first()
+    .getByRole("button", { name: "Скрыть" })
+    .click();
+  await expect(
+    page.locator("article[data-photo-id]").first().getByText("Скрыто", { exact: true }),
+  ).toBeVisible();
+
+  expect((await page.request.get(`/api/gallery/${hiddenId}`)).status()).toBe(404);
+  expect(
+    (await page.request.get(`/api/gallery/${hiddenId}/before`)).status(),
+  ).toBe(404);
+
+  // Удаление позиции чистит оба файла
+  await page
+    .locator("article[data-photo-id]")
+    .first()
+    .getByRole("button", { name: "Удалить фото" })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Удалить", exact: true })
+    .click();
+  await expect(page.locator("article[data-photo-id]")).toHaveCount(1);
+  expect(uploadCount()).toBe(1);
+
+  await page
+    .locator("article[data-photo-id]")
+    .first()
+    .getByRole("button", { name: "Удалить фото" })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Удалить", exact: true })
+    .click();
+  await expect(page.getByText("Пока нет работ")).toBeVisible();
+  expect(uploadCount()).toBe(0);
+
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "Мебель после чистки" }),
+  ).toHaveCount(0);
+});
+
+test("убрать фото до возвращает обычную картинку", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto("/admin/login");
+  await page.getByLabel("Почта").fill("owner@myagko.ru");
+  await page.getByLabel("Пароль").fill("Myagko-demo-2026");
+  await page.getByRole("button", { name: "Войти" }).click();
+  await expect(page.getByRole("heading", { name: "Заявки", level: 1 })).toBeVisible();
+  await page.goto("/admin/gallery");
+
+  while ((await page.locator("article[data-photo-id]").count()) > 0) {
+    const before = await page.locator("article[data-photo-id]").count();
+    await page
+      .locator("article[data-photo-id]")
+      .first()
+      .getByRole("button", { name: "Удалить фото" })
+      .click();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Удалить", exact: true })
+      .click();
+    await expect(page.locator("article[data-photo-id]")).toHaveCount(before - 1);
+  }
+
+  const buffer = fs.readFileSync(photoPath);
+  await page
+    .getByLabel("Загрузить фото работ")
+    .setInputFiles({ name: "single-after.png", mimeType: "image/png", buffer });
+  await expect(page.locator("article[data-photo-id]")).toHaveCount(1);
+
+  const card = page.locator("article[data-photo-id]").first();
+  await card
+    .getByLabel("Загрузить фото до")
+    .setInputFiles({ name: "single-before.png", mimeType: "image/png", buffer });
+  await expect(card.getByText("до/после", { exact: true })).toBeVisible();
+  expect(uploadCount()).toBe(2);
+
+  await page.goto("/");
+  await expect(
+    page.getByRole("slider", { name: "Сравнение до и после чистки" }),
+  ).toBeVisible();
+
+  await page.goto("/admin/gallery");
+  await page
+    .locator("article[data-photo-id]")
+    .first()
+    .getByRole("button", { name: "Убрать фото до" })
+    .click();
+  await expect(page.locator("article[data-photo-id]").first().getByText("до/после")).toHaveCount(0);
+  expect(uploadCount()).toBe(1);
+
+  await page.goto("/");
+  await expect(
+    page.getByRole("slider", { name: "Сравнение до и после чистки" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: /Открыть фото/ }),
+  ).toHaveCount(1);
+
+  // Убираем за собой
+  await page.goto("/admin/gallery");
+  await page
+    .locator("article[data-photo-id]")
+    .first()
+    .getByRole("button", { name: "Удалить фото" })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Удалить", exact: true })
+    .click();
+  await expect(page.getByText("Пока нет работ")).toBeVisible();
+  expect(uploadCount()).toBe(0);
 });

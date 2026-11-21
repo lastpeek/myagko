@@ -117,8 +117,53 @@ export async function createGalleryPhotos(
   }
 }
 
-export async function updateGalleryPhoto(
+export async function setGalleryBeforePhoto(
   db: Database,
+  id: string,
+  photo: NormalizedPhoto,
+  storage: PhotoStorage = getStorage(),
+): Promise<boolean> {
+  const existing = await getGalleryPhoto(db, id);
+  if (!existing) return false;
+
+  const key = `${randomUUID()}.webp`;
+  await storage.put(key, photo.data, photo.mime);
+
+  try {
+    await db
+      .update(galleryPhotos)
+      .set({ beforeStorageKey: key })
+      .where(eq(galleryPhotos.id, id));
+  } catch (error) {
+    await storage.delete(key).catch(() => undefined);
+    throw error;
+  }
+
+  if (existing.beforeStorageKey) {
+    await storage.delete(existing.beforeStorageKey).catch(() => undefined);
+  }
+
+  return true;
+}
+
+export async function removeGalleryBeforePhoto(
+  db: Database,
+  id: string,
+  storage: PhotoStorage = getStorage(),
+): Promise<boolean> {
+  const existing = await getGalleryPhoto(db, id);
+  if (!existing?.beforeStorageKey) return false;
+
+  await storage.delete(existing.beforeStorageKey);
+  await db
+    .update(galleryPhotos)
+    .set({ beforeStorageKey: null })
+    .where(eq(galleryPhotos.id, id));
+
+  return true;
+}
+
+export async function updateGalleryPhoto(  db: Database,
   id: string,
   input: { caption?: string; isVisible?: boolean; move?: "up" | "down" },
 ): Promise<boolean> {
@@ -176,8 +221,12 @@ export async function deleteGalleryPhoto(
   const photo = await getGalleryPhoto(db, id);
   if (!photo) return false;
 
-  // Сначала объект, потом строка: не оставляем ссылку на удалённый файл.
-  await storage.delete(photo.storageKey);
+  // Сначала объекты, потом строка: не оставляем ссылки на удалённые файлы.
+  const keys = [photo.storageKey, photo.beforeStorageKey].filter(
+    (key): key is string => Boolean(key),
+  );
+  await Promise.all(keys.map((key) => storage.delete(key)));
+
   const deleted = await db
     .delete(galleryPhotos)
     .where(eq(galleryPhotos.id, id))

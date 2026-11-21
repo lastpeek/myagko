@@ -30,6 +30,10 @@ export default async function AdminGalleryPage() {
             caption: photo.caption,
             isVisible: photo.isVisible,
             previewUrl: `/api/admin/gallery/${photo.id}/file`,
+            hasBefore: Boolean(photo.beforeStorageKey),
+            beforePreviewUrl: photo.beforeStorageKey
+              ? `/api/admin/gallery/${photo.id}/before/file`
+              : null,
             createdAt: photo.createdAt.toISOString(),
           }))}
         />

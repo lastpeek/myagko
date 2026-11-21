@@ -3,10 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 
 import { ChevronLeftIcon, ChevronRightIcon, CloseIcon } from "@/components/icons";
+import { CompareSlider } from "@/components/compare-slider";
 
 export type GalleryPublicItem = {
   id: string;
   src: string;
+  beforeSrc: string | null;
   caption: string;
   alt: string;
 };
@@ -106,20 +108,38 @@ export function GallerySection({ items }: { items: GalleryPublicItem[] }) {
       >
         {items.map((item, index) => (
           <figure key={item.id} className="min-w-0">
-            <button
-              type="button"
-              onClick={() => setOpenIndex(index)}
-              aria-label={`Открыть фото: ${item.alt}`}
-              className="block aspect-square w-full overflow-hidden rounded-[20px] border border-line bg-surface-2"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={item.src}
-                alt={item.alt}
-                loading="lazy"
-                className="h-full w-full object-cover"
-              />
-            </button>
+            <div className="relative aspect-square w-full overflow-hidden rounded-[20px] border border-line bg-surface-2">
+              {item.beforeSrc ? (
+                <>
+                  <CompareSlider
+                    beforeSrc={item.beforeSrc}
+                    afterSrc={item.src}
+                    className="pointer-events-none absolute inset-0 z-20"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setOpenIndex(index)}
+                    aria-label={`Открыть фото: ${item.alt}`}
+                    className="absolute inset-0 z-10 rounded-[20px]"
+                  />
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setOpenIndex(index)}
+                  aria-label={`Открыть фото: ${item.alt}`}
+                  className="block h-full w-full"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={item.src}
+                    alt={item.alt}
+                    loading="lazy"
+                    className="h-full w-full object-cover"
+                  />
+                </button>
+              )}
+            </div>
             {item.caption ? (
               <figcaption className="mt-2 text-[12.5px] leading-4 text-ink-2">
                 {item.caption}
@@ -171,15 +191,28 @@ export function GallerySection({ items }: { items: GalleryPublicItem[] }) {
 
           <div className="flex h-dvh items-center justify-center px-4 md:px-20">
             <figure
-              className="max-w-full"
+              className="w-full max-w-full"
               onClick={(event) => event.stopPropagation()}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={current.src}
-                alt={current.alt}
-                className="mx-auto max-h-[72dvh] w-auto max-w-full rounded-[16px] object-contain"
-              />
+              {current.beforeSrc ? (
+                <div
+                  className="mx-auto aspect-square overflow-hidden rounded-[16px] bg-surface-2"
+                  style={{ width: "min(72dvh, 100%)" }}
+                >
+                  <CompareSlider
+                    beforeSrc={current.beforeSrc}
+                    afterSrc={current.src}
+                    className="relative h-full w-full"
+                  />
+                </div>
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={current.src}
+                  alt={current.alt}
+                  className="mx-auto max-h-[72dvh] w-auto max-w-full rounded-[16px] object-contain"
+                />
+              )}
               {current.caption ? (
                 <figcaption className="mx-auto mt-3 max-w-[60ch] text-center text-[13px] leading-5 text-[#d8d2c8]">
                   {current.caption}

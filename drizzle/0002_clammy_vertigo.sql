@@ -1,0 +1,1 @@
+ALTER TABLE "gallery_photos" ADD COLUMN "before_storage_key" text;
