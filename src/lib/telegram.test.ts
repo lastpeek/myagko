@@ -315,6 +315,81 @@ describe("сообщение о заявке", () => {
     expect(okFetch).toHaveBeenCalledTimes(1);
   });
 
+  it("для заявки только «По фото» пишет «по фото», а не 0 ₽", async () => {
+    const db = getDb();
+    await saveTelegramChatId(db, "777888999");
+
+    const inserted = await db
+      .insert(orders)
+      .values({
+        publicNumber: 2002,
+        token: "telegram-manual-token",
+        name: "Анна К.",
+        phone: "+79130000000",
+        address: "Улица Ленина, 1",
+        consentAt: new Date(),
+        consentVersion: "2026-11-19",
+        estimatedTotal: 0,
+        priceSnapshot: {
+          capturedAt: new Date().toISOString(),
+          rules: {
+            minOrder: 2500,
+            soilingPercent: 30,
+            secondSidePercent: 50,
+            outOfTownFee: 500,
+            roundingStep: 10,
+          },
+          tariff: [],
+          otherRequiresPhoto: true,
+        },
+        breakdown: {
+          lines: [
+            {
+              key: "other#0",
+              label: "Другое",
+              variantLabel: "По фото",
+              quantity: 1,
+              heavySoiling: false,
+              secondSide: false,
+              manual: true,
+              unitBasePrice: null,
+              lineTotal: null,
+              formula: "По фото",
+            },
+          ],
+          itemsSubtotal: 0,
+          minimumAdjustment: 0,
+          outOfTownFee: 0,
+          roundingAdjustment: 0,
+          total: 0,
+          hasManualItems: true,
+          manualItemsCount: 1,
+          minOrder: 2500,
+        },
+      })
+      .returning({ id: orders.id });
+
+    await db.insert(orderItems).values({
+      orderId: inserted[0]!.id,
+      category: "other",
+      label: "Другое",
+      variantLabel: "По фото",
+      quantity: 1,
+      unitBasePrice: null,
+      lineTotal: null,
+      formula: "По фото",
+      sortOrder: 0,
+    });
+
+    okFetch.mockClear();
+    await notifyNewOrder(db, inserted[0]!.id);
+
+    const [, init] = okFetch.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as { text: string };
+    expect(body.text).toContain("по фото");
+    expect(body.text).not.toContain("0 ₽");
+  });
+
   it("отправляет тестовое сообщение в подключённый чат", async () => {
     const db = getDb();
     await saveTelegramChatId(db, "321654987");
