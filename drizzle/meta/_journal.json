@@ -29,6 +29,13 @@
       "when": 1795266354916,
       "tag": "0003_serious_runaways",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795436897637,
+      "tag": "0004_light_fantastic_four",
+      "breakpoints": true
     }
   ]
 }

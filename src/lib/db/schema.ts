@@ -6,12 +6,19 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
 
-import type { PricingCategory, PricingRules } from "@/lib/calc/pricing";
+import type {
+  AppliedPricingOption,
+  PricingCategory,
+  PricingOption,
+  PricingOptionKind,
+  PricingRules,
+} from "@/lib/calc/pricing";
 
 export type OrderStatus = "new" | "agreed" | "done" | "cancelled";
 
@@ -37,6 +44,8 @@ export type TariffItemSnapshot = {
   allowsSoiling: boolean;
   allowsSecondSide: boolean;
   isManual: boolean;
+  /** Опции, доступные варианту на момент снимка. */
+  options?: PricingOption[];
 };
 
 export type PriceSnapshot = {
@@ -44,6 +53,8 @@ export type PriceSnapshot = {
   rules: PricingRules;
   tariff: TariffItemSnapshot[];
   otherRequiresPhoto: boolean;
+  /** Каталог опций на момент снимка. */
+  options?: PricingOption[];
 };
 
 export type OrderBreakdown = {
@@ -52,12 +63,15 @@ export type OrderBreakdown = {
     label: string;
     variantLabel: string;
     quantity: number;
+    /** Легаси-флаги: нужны для отображения заявок, созданных до опций. */
     heavySoiling: boolean;
     secondSide: boolean;
     manual: boolean;
     unitBasePrice: number | null;
     lineTotal: number | null;
     formula: string;
+    /** Выбранные опции; у старых заявок отсутствует. */
+    options?: AppliedPricingOption[];
   }>;
   itemsSubtotal: number;
   minimumAdjustment: number;
@@ -73,6 +87,8 @@ export type OrderEventPayload = Record<string, string | number | null>;
 
 export type SettingsRecord = typeof tariffSettings.$inferSelect;
 export type TariffRecord = typeof tariffItems.$inferSelect;
+export type ServiceRecord = typeof services.$inferSelect;
+export type PriceOptionRecord = typeof priceOptions.$inferSelect;
 export type OrderRecord = typeof orders.$inferSelect;
 
 export const company = pgTable("company", {
@@ -126,6 +142,54 @@ export const tariffItems = pgTable(
       .defaultNow(),
   },
   (table) => [index("tariff_items_sort_idx").on(table.sortOrder)],
+);
+
+export const services = pgTable(
+  "services",
+  {
+    id: text("id").primaryKey(),
+    label: text("label").notNull(),
+    hint: text("hint").notNull().default(""),
+    icon: text("icon").notNull().default("other"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    isActive: boolean("is_active").notNull().default(true),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index("services_sort_idx").on(table.sortOrder)],
+);
+
+export const priceOptions = pgTable(
+  "price_options",
+  {
+    id: text("id").primaryKey(),
+    label: text("label").notNull(),
+    kind: text("kind").$type<PricingOptionKind>().notNull(),
+    value: integer("value").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    isActive: boolean("is_active").notNull().default(true),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index("price_options_sort_idx").on(table.sortOrder)],
+);
+
+export const tariffItemOptions = pgTable(
+  "tariff_item_options",
+  {
+    itemId: text("item_id")
+      .notNull()
+      .references(() => tariffItems.id, { onDelete: "cascade" }),
+    optionId: text("option_id")
+      .notNull()
+      .references(() => priceOptions.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.itemId, table.optionId] }),
+    index("tariff_item_options_option_idx").on(table.optionId),
+  ],
 );
 
 export const galleryPhotos = pgTable(
@@ -216,6 +280,7 @@ export const orderItems = pgTable(
     unitBasePrice: integer("unit_base_price"),
     lineTotal: integer("line_total"),
     formula: text("formula").notNull().default(""),
+    options: jsonb("options").$type<AppliedPricingOption[]>(),
     sortOrder: integer("sort_order").notNull().default(0),
   },
   (table) => [index("order_items_order_idx").on(table.orderId, table.sortOrder)],

@@ -6,12 +6,70 @@ import type { Database } from "@/lib/db";
 import {
   adminUsers,
   company,
+  priceOptions,
+  services,
+  tariffItemOptions,
   tariffItems,
   tariffSettings,
 } from "@/lib/db/schema";
 
 // isolatedModules не даёт читать const enum из d.ts — значение Argon2id = 2.
 const ARGON2ID = 2;
+
+export const DEFAULT_SERVICES = [
+  {
+    id: "sofa",
+    label: "Диваны",
+    hint: "2, 3 места, угловой",
+    icon: "sofa",
+    sortOrder: 10,
+  },
+  {
+    id: "armchair",
+    label: "Кресла",
+    hint: "Обычное или с откидной спинкой",
+    icon: "armchair",
+    sortOrder: 20,
+  },
+  {
+    id: "mattress",
+    label: "Матрасы",
+    hint: "С одной или двумя сторонами",
+    icon: "mattress",
+    sortOrder: 30,
+  },
+  {
+    id: "chair",
+    label: "Стулья",
+    hint: "Только сиденье или весь стул",
+    icon: "chair",
+    sortOrder: 40,
+  },
+  {
+    id: "other",
+    label: "Другое",
+    hint: "Опишите и приложите фото",
+    icon: "other",
+    sortOrder: 50,
+  },
+];
+
+export const DEFAULT_PRICE_OPTIONS = [
+  {
+    id: "soiling",
+    label: "Сильные загрязнения",
+    kind: "percent" as const,
+    value: 30,
+    sortOrder: 10,
+  },
+  {
+    id: "second-side",
+    label: "Вторая сторона",
+    kind: "percent" as const,
+    value: 50,
+    sortOrder: 20,
+  },
+];
 
 export const DEFAULT_TARIFFS = [
   {
@@ -158,6 +216,34 @@ export async function seedDatabase(
     })
     .onConflictDoNothing();
 
+  for (const service of DEFAULT_SERVICES) {
+    await db
+      .insert(services)
+      .values({
+        id: service.id,
+        label: service.label,
+        hint: service.hint,
+        icon: service.icon,
+        sortOrder: service.sortOrder,
+        isActive: true,
+      })
+      .onConflictDoNothing();
+  }
+
+  for (const option of DEFAULT_PRICE_OPTIONS) {
+    await db
+      .insert(priceOptions)
+      .values({
+        id: option.id,
+        label: option.label,
+        kind: option.kind,
+        value: option.value,
+        sortOrder: option.sortOrder,
+        isActive: true,
+      })
+      .onConflictDoNothing();
+  }
+
   for (const item of DEFAULT_TARIFFS) {
     await db
       .insert(tariffItems)
@@ -175,6 +261,21 @@ export async function seedDatabase(
         isActive: true,
       })
       .onConflictDoNothing();
+  }
+
+  const defaultLinks = DEFAULT_TARIFFS.flatMap((item) => {
+    const links: { itemId: string; optionId: string }[] = [];
+    if (item.allowsSoiling) {
+      links.push({ itemId: item.id, optionId: "soiling" });
+    }
+    if (item.allowsSecondSide) {
+      links.push({ itemId: item.id, optionId: "second-side" });
+    }
+    return links;
+  });
+
+  if (defaultLinks.length > 0) {
+    await db.insert(tariffItemOptions).values(defaultLinks).onConflictDoNothing();
   }
 
   // Подписи вариантов могли измениться в шаблоне. Обновляем только текст:

@@ -35,7 +35,7 @@ export default async function HomePage() {
     listGalleryPhotos(getDb(), { visibleOnly: true }),
   ]);
 
-  const tariffs = tariffRows.map(toPublicTariff);
+  const tariffs = tariffRows.map((item) => toPublicTariff(item));
   const rules = toPricingRules(settings);
   const normalized = normalizePhone(company.phone) ?? company.phone;
 

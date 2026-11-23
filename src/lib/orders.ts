@@ -1,9 +1,13 @@
 import { randomBytes, randomUUID } from "node:crypto";
 
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import { CONSENT_VERSION } from "@/lib/consent";
-import { calculateOrder, formatLineFormula } from "@/lib/calc/pricing";
+import {
+  calculateOrder,
+  type AppliedPricingOption,
+  type PricingOption,
+} from "@/lib/calc/pricing";
 import type { Database } from "@/lib/db";
 import {
   company as companyTable,
@@ -12,10 +16,13 @@ import {
   orderItems,
   orderPhotos,
   orders,
+  priceOptions,
+  tariffItemOptions,
   tariffItems,
   tariffSettings,
   type OrderBreakdown,
   type OrderStatus,
+  type PriceOptionRecord,
   type PriceSnapshot,
   type SettingsRecord,
   type TariffItemSnapshot,
@@ -58,6 +65,7 @@ function snapshotOf(
   tariffs: TariffItemSnapshot[],
   settings: SettingsRecord,
   otherRequiresPhoto: boolean,
+  options: PricingOption[],
 ): PriceSnapshot {
   return {
     capturedAt: new Date().toISOString(),
@@ -70,6 +78,61 @@ function snapshotOf(
     },
     tariff: tariffs,
     otherRequiresPhoto,
+    options,
+  };
+}
+
+type ItemOptions = {
+  /** Доступные опции по id варианта. */
+  byItem: Map<string, PricingOption[]>;
+  /** Каталог активных опций для снимка. */
+  catalog: PricingOption[];
+};
+
+async function loadItemOptions(
+  db: Database,
+  itemIds: string[],
+): Promise<ItemOptions> {
+  if (itemIds.length === 0) return { byItem: new Map(), catalog: [] };
+
+  const [links, rows] = await Promise.all([
+    db
+      .select({
+        itemId: tariffItemOptions.itemId,
+        optionId: tariffItemOptions.optionId,
+      })
+      .from(tariffItemOptions)
+      .where(inArray(tariffItemOptions.itemId, itemIds)),
+    db
+      .select()
+      .from(priceOptions)
+      .where(eq(priceOptions.isActive, true))
+      .orderBy(asc(priceOptions.sortOrder), asc(priceOptions.id)),
+  ]);
+
+  const optionById = new Map(rows.map((row) => [row.id, row]));
+  const byItem = new Map<string, PricingOption[]>();
+
+  for (const link of links) {
+    const option = optionById.get(link.optionId);
+    if (!option) continue;
+    const list = byItem.get(link.itemId) ?? [];
+    list.push(toPricingOption(option));
+    byItem.set(link.itemId, list);
+  }
+
+  return {
+    byItem,
+    catalog: rows.map(toPricingOption),
+  };
+}
+
+function toPricingOption(option: PriceOptionRecord): PricingOption {
+  return {
+    id: option.id,
+    label: option.label,
+    kind: option.kind,
+    value: option.value,
   };
 }
 
@@ -125,7 +188,7 @@ export async function createOrder(
   db: Database,
   payload: CreateOrderPayload,
   incomingPhotos: IncomingPhoto[],
-  options: {
+  overrides: {
     storage?: PhotoStorage;
     company?: CompanySettings;
     settings?: SettingsRecord;
@@ -136,10 +199,14 @@ export async function createOrder(
   if (existing) return existing;
 
   const company =
-    options.company ??
+    overrides.company ??
     (await loadCompanyOrDefaults(db));
-  const settings = options.settings ?? (await loadSettings(db));
-  const tariffs = options.tariffs ?? (await loadActiveTariffs(db));
+  const settings = overrides.settings ?? (await loadSettings(db));
+  const tariffs = overrides.tariffs ?? (await loadActiveTariffs(db));
+  const itemOptions = await loadItemOptions(
+    db,
+    tariffs.map((tariff) => tariff.id),
+  );
 
   const phone = normalizePhone(payload.customer.phone);
   if (!phone) {
@@ -191,6 +258,23 @@ export async function createOrder(
       );
     }
 
+    const availableOptions = itemOptions.byItem.get(tariff.id);
+    const selectedOptionIds = item.optionIds ?? [];
+
+    if (availableOptions !== undefined) {
+      const availableIds = new Set(
+        availableOptions.map((option) => option.id),
+      );
+      for (const optionId of selectedOptionIds) {
+        if (!availableIds.has(optionId)) {
+          throw new OrderValidationError(
+            `items.${index}.optionIds`,
+            "Эта опция недоступна для выбранного варианта. Обновите страницу.",
+          );
+        }
+      }
+    }
+
     const photos = photosByItem.get(index) ?? [];
     if (photos.length > settings.maxPhotosPerItem) {
       throw new OrderValidationError(
@@ -207,26 +291,33 @@ export async function createOrder(
           "Опишите предмет — минимум 10 символов",
         );
       }
-      if (company.otherRequiresPhoto && photos.length === 0) {
+      if (
+        (tariff.requiresPhoto || company.otherRequiresPhoto) &&
+        photos.length === 0
+      ) {
         throw new OrderValidationError(
           `photos.${index}`,
-          "Для «Другого» нужно хотя бы одно фото",
+          "Для этой позиции нужно хотя бы одно фото",
         );
       }
     }
 
-    if (item.heavySoiling && !tariff.allowsSoiling) {
-      throw new OrderValidationError(
-        `items.${index}.heavySoiling`,
-        "Для этой позиции доплата за загрязнения не применяется",
-      );
-    }
+    // Новые опции проверяются по привязке к варианту. Легаси-флаги — только
+    // для старых клиентов и баз, где опции ещё не заведены.
+    if (availableOptions === undefined) {
+      if (item.heavySoiling && !tariff.allowsSoiling) {
+        throw new OrderValidationError(
+          `items.${index}.heavySoiling`,
+          "Для этой позиции доплата за загрязнения не применяется",
+        );
+      }
 
-    if (item.secondSide && !tariff.allowsSecondSide) {
-      throw new OrderValidationError(
-        `items.${index}.secondSide`,
-        "Вторая сторона есть только у матраса",
-      );
+      if (item.secondSide && !tariff.allowsSecondSide) {
+        throw new OrderValidationError(
+          `items.${index}.secondSide`,
+          "У этого варианта нет второй стороны",
+        );
+      }
     }
 
     return {
@@ -235,6 +326,8 @@ export async function createOrder(
       quantity: item.quantity,
       heavySoiling: tariff.allowsSoiling && item.heavySoiling,
       secondSide: tariff.allowsSecondSide && item.secondSide,
+      options: availableOptions,
+      optionIds: selectedOptionIds,
       manualDescription: tariff.isManual
         ? (item.manualDescription?.trim() ?? "")
         : null,
@@ -253,6 +346,9 @@ export async function createOrder(
       manual: item.tariff.isManual,
       allowsSoiling: item.tariff.allowsSoiling,
       allowsSecondSide: item.tariff.allowsSecondSide,
+      ...(item.options !== undefined
+        ? { options: item.options, optionIds: item.optionIds }
+        : {}),
     })),
     rules: {
       minOrder: settings.minOrder,
@@ -277,19 +373,10 @@ export async function createOrder(
         manual: priced.manual,
         unitBasePrice: priced.unitBasePrice,
         lineTotal: priced.lineTotal,
-        formula: priced.manual
-          ? "По фото"
-          : formatLineFormula({
-              base: priced.unitBasePrice ?? 0,
-              quantity: priced.quantity,
-              soilingPercent: priced.heavySoiling
-                ? settings.soilingPercent
-                : 0,
-              secondSidePercent: priced.secondSide
-                ? settings.secondSidePercent
-                : 0,
-              lineTotal: priced.lineTotal ?? 0,
-            }),
+        formula:
+          calculation.formulas[`${item.tariff.id}#${item.index}`] ??
+          (priced.manual ? "По фото" : ""),
+        options: priced.options,
       };
     }),
     itemsSubtotal: calculation.itemsSubtotal,
@@ -313,12 +400,14 @@ export async function createOrder(
       allowsSoiling: tariff.allowsSoiling,
       allowsSecondSide: tariff.allowsSecondSide,
       isManual: tariff.isManual,
+      options: itemOptions.byItem.get(tariff.id),
     })),
     settings,
     company.otherRequiresPhoto,
+    itemOptions.catalog,
   );
 
-  const storage = options.storage ?? getStorage();
+  const storage = overrides.storage ?? getStorage();
   const storedKeys: string[] = [];
 
   type PhotoRow = {
@@ -442,6 +531,7 @@ export async function createOrder(
             unitBasePrice: calculation.lines[index]!.unitBasePrice,
             lineTotal: calculation.lines[index]!.lineTotal,
             formula: breakdown.lines[index]!.formula,
+            options: calculation.lines[index]!.options,
             sortOrder: index,
           })),
         )
@@ -568,6 +658,7 @@ export type PublicOrderItem = {
   unitBasePrice: number | null;
   lineTotal: number | null;
   formula: string;
+  options: AppliedPricingOption[];
   photos: PublicOrderPhoto[];
 };
 
@@ -667,6 +758,7 @@ export async function getPublicOrder(
       unitBasePrice: item.unitBasePrice,
       lineTotal: item.lineTotal,
       formula: item.formula,
+      options: item.options ?? [],
       photos: photosByItem.get(item.id) ?? [],
     })),
     totals: {

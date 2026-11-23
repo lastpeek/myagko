@@ -33,7 +33,7 @@ export default async function CheckoutPage() {
       <SiteHeader name={company.name} city={company.city} />
       <main>
         <CheckoutForm
-          tariffs={tariffRows.map(toPublicTariff)}
+          tariffs={tariffRows.map((item) => toPublicTariff(item))}
           rules={toPricingRules(settings)}
           territory={company.territory}
           maxPhotos={settings.maxPhotosPerItem}

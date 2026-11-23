@@ -1,6 +1,18 @@
-import type { PricingCategory, PricingRules } from "@/lib/calc/pricing";
+import type { PricingCategory, PricingOption, PricingRules } from "@/lib/calc/pricing";
 
 /** Сериализуемые данные, которые сервер передаёт клиентским компонентам. */
+
+export type PublicService = {
+  id: string;
+  label: string;
+  hint: string;
+  icon: string;
+};
+
+export type PublicPriceOption = PricingOption & {
+  sortOrder: number;
+};
+
 export type PublicTariff = {
   id: string;
   category: PricingCategory;
@@ -11,6 +23,7 @@ export type PublicTariff = {
   allowsSoiling: boolean;
   allowsSecondSide: boolean;
   isManual: boolean;
+  options: PublicPriceOption[];
 };
 
 export type PublicRules = PricingRules;

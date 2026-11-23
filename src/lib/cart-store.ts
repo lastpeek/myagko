@@ -4,7 +4,7 @@ import { useEffect, useSyncExternalStore } from "react";
 
 import { calculateOrder, type PricingRules } from "@/lib/calc/pricing";
 
-export type CartCategory = "sofa" | "armchair" | "mattress" | "chair" | "other";
+export type CartCategory = string;
 
 export type PhotoMeta = {
   id: string;

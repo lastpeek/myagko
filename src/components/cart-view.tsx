@@ -36,7 +36,7 @@ import { formatRub } from "@/lib/format";
 import { deletePhoto, prunePhotos } from "@/lib/photo-store";
 import type { PublicRules, PublicTariff } from "@/lib/ui-types";
 
-const ICON = {
+const ICON: Record<string, typeof SofaIcon> = {
   sofa: SofaIcon,
   armchair: ArmchairIcon,
   mattress: MattressIcon,
@@ -154,7 +154,7 @@ export function CartView({
         {items.map((item) => {
           const tariff = tariffs.find((entry) => entry.id === item.tariffId);
           const line = result.lines.find((entry) => entry.key === item.uid);
-          const Icon = ICON[item.category];
+          const Icon = ICON[item.category] ?? OtherIcon;
           const flags: string[] = [];
           if (item.heavySoiling) flags.push("сильные загрязнения");
           if (item.secondSide) flags.push("две стороны");

@@ -33,7 +33,7 @@ export default async function CartPage() {
       <SiteHeader name={company.name} city={company.city} />
       <main>
         <CartView
-          tariffs={tariffRows.map(toPublicTariff)}
+          tariffs={tariffRows.map((item) => toPublicTariff(item))}
           rules={toPricingRules(settings)}
           maxPhotos={settings.maxPhotosPerItem}
           otherRequiresPhoto={company.otherRequiresPhoto}

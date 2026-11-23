@@ -7,7 +7,7 @@ import { CheckIcon, SpinnerIcon } from "@/components/icons";
 
 export type TariffRow = {
   id: string;
-  category: "sofa" | "armchair" | "mattress" | "chair" | "other";
+  category: string;
   label: string;
   variantLabel: string;
   basePrice: number | null;
