@@ -97,7 +97,10 @@ export function CartView({
     if (removedTimer.current) window.clearTimeout(removedTimer.current);
   }
 
-  const totalLabel = result.total === null ? "По фото" : formatRub(result.total);
+  const allManual =
+    result.lines.length > 0 &&
+    result.manualItemsCount === result.lines.length;
+  const totalLabel = allManual ? "По фото" : formatRub(result.total);
   const canCheckout = items.length > 0 && manualIncomplete.length === 0;
 
   if (!hydrated) {

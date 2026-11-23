@@ -1,6 +1,7 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   date,
   index,
   integer,
@@ -44,7 +45,7 @@ export type TariffItemSnapshot = {
   allowsSoiling: boolean;
   allowsSecondSide: boolean;
   isManual: boolean;
-  /** Опции, доступные варианту на момент снимка. */
+  /** Опции варианта с kind и value на момент снимка. */
   options?: PricingOption[];
 };
 
@@ -53,7 +54,7 @@ export type PriceSnapshot = {
   rules: PricingRules;
   tariff: TariffItemSnapshot[];
   otherRequiresPhoto: boolean;
-  /** Каталог опций на момент снимка. */
+  /** Каталог опций с kind и value на момент снимка. */
   options?: PricingOption[];
 };
 
@@ -76,6 +77,9 @@ export type OrderBreakdown = {
   itemsSubtotal: number;
   minimumAdjustment: number;
   outOfTownFee: number;
+  /** Фиксированные доплаты «за заказ», один раз на заказ. */
+  orderOptions?: AppliedPricingOption[];
+  orderOptionsTotal?: number;
   roundingAdjustment: number;
   total: number | null;
   hasManualItems: boolean;
@@ -123,27 +127,6 @@ export const tariffSettings = pgTable("tariff_settings", {
     .defaultNow(),
 });
 
-export const tariffItems = pgTable(
-  "tariff_items",
-  {
-    id: text("id").primaryKey(),
-    category: text("category").$type<PricingCategory>().notNull(),
-    label: text("label").notNull(),
-    variantLabel: text("variant_label").notNull(),
-    basePrice: integer("base_price"),
-    requiresPhoto: boolean("requires_photo").notNull().default(false),
-    allowsSoiling: boolean("allows_soiling").notNull().default(true),
-    allowsSecondSide: boolean("allows_second_side").notNull().default(false),
-    isManual: boolean("is_manual").notNull().default(false),
-    sortOrder: integer("sort_order").notNull().default(0),
-    isActive: boolean("is_active").notNull().default(true),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => [index("tariff_items_sort_idx").on(table.sortOrder)],
-);
-
 export const services = pgTable(
   "services",
   {
@@ -173,7 +156,37 @@ export const priceOptions = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (table) => [index("price_options_sort_idx").on(table.sortOrder)],
+  (table) => [
+    index("price_options_sort_idx").on(table.sortOrder),
+    check(
+      "price_options_kind_check",
+      sql`${table.kind} in ('percent', 'fixed', 'fixed_order')`,
+    ),
+  ],
+);
+
+export const tariffItems = pgTable(
+  "tariff_items",
+  {
+    id: text("id").primaryKey(),
+    category: text("category")
+      .$type<PricingCategory>()
+      .notNull()
+      .references(() => services.id, { onDelete: "restrict" }),
+    label: text("label").notNull(),
+    variantLabel: text("variant_label").notNull(),
+    basePrice: integer("base_price"),
+    requiresPhoto: boolean("requires_photo").notNull().default(false),
+    allowsSoiling: boolean("allows_soiling").notNull().default(true),
+    allowsSecondSide: boolean("allows_second_side").notNull().default(false),
+    isManual: boolean("is_manual").notNull().default(false),
+    sortOrder: integer("sort_order").notNull().default(0),
+    isActive: boolean("is_active").notNull().default(true),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index("tariff_items_sort_idx").on(table.sortOrder)],
 );
 
 export const tariffItemOptions = pgTable(

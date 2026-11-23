@@ -74,7 +74,11 @@ export default async function OrderPage({
         ? formatDate(order.desired.date)
         : null;
 
-  const price = order.finalPrice ?? order.totals.total;
+  const allManual =
+    order.items.length > 0 &&
+    order.totals.manualItemsCount === order.items.length;
+  const price =
+    order.finalPrice ?? (allManual ? null : order.totals.total);
 
   return (
     <div className="min-h-dvh bg-paper">

@@ -167,32 +167,61 @@ export const pricingServiceInputSchema = z.object({
   isActive: z.boolean(),
 });
 
-export const pricingOptionInputSchema = z.object({
-  id: pricingId,
-  label: trimmed(1, 60, "Название опции"),
-  kind: z.enum(["percent", "fixed"]),
-  value: z.number().int().min(0).max(1_000_000),
-  sortOrder: z.number().int().min(0).max(100_000),
-  isActive: z.boolean(),
-});
+export const pricingOptionInputSchema = z
+  .object({
+    id: pricingId,
+    label: trimmed(1, 60, "Название опции"),
+    kind: z.enum(["percent", "fixed", "fixed_order"]),
+    value: z.number().int().min(0).max(1_000_000),
+    sortOrder: z.number().int().min(0).max(100_000),
+    isActive: z.boolean(),
+  })
+  .superRefine((option, ctx) => {
+    if (option.kind === "percent" && option.value > 500) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Процент — от 0 до 500",
+        path: ["value"],
+      });
+    }
+  });
 
-export const tariffItemUpdateSchema = z.object({
-  id: pricingId,
-  category: pricingId,
-  label: trimmed(1, 60, "Название услуги"),
-  variantLabel: trimmed(1, 60, "Название варианта"),
-  basePrice: z.number().int().min(0).max(1_000_000).nullable(),
-  requiresPhoto: z.boolean(),
-  isManual: z.boolean(),
-  isActive: z.boolean(),
-  sortOrder: z.number().int().min(0).max(100_000),
-  optionIds: z.array(pricingId).max(20),
-});
+export const tariffItemUpdateSchema = z
+  .object({
+    id: pricingId,
+    category: pricingId,
+    label: trimmed(1, 60, "Название услуги"),
+    variantLabel: trimmed(1, 60, "Название варианта"),
+    basePrice: z.number().int().min(0).max(1_000_000).nullable(),
+    requiresPhoto: z.boolean(),
+    isManual: z.boolean(),
+    isActive: z.boolean(),
+    sortOrder: z.number().int().min(0).max(100_000),
+    optionIds: z.array(pricingId).max(20),
+  })
+  .strict();
+
+/** Старый payload кабинета: меняются только цена и видимость. */
+export const legacyTariffItemUpdateSchema = z
+  .object({
+    id: z.string().trim().min(1).max(64),
+    basePrice: z.number().int().min(0).max(1_000_000).nullable(),
+    isActive: z.boolean(),
+  })
+  .strict();
+
+export const tariffItemPatchSchema = z.union([
+  tariffItemUpdateSchema,
+  legacyTariffItemUpdateSchema,
+]);
 
 export const tariffSettingsUpdateSchema = z.object({
   minOrder: z.number().int().min(0).max(1_000_000),
   outOfTownFee: z.number().int().min(0).max(100_000),
   roundingStep: z.number().int().min(1).max(1000),
+  /** Легаси-поля старой формы; новые заявки считаются по опциям. */
+  soilingPercent: z.number().int().min(0).max(500).optional(),
+  secondSidePercent: z.number().int().min(0).max(500).optional(),
 });
 
 function uniqueIds(
@@ -214,19 +243,52 @@ function uniqueIds(
 export const updateTariffsSchema = z
   .object({
     settings: tariffSettingsUpdateSchema,
-    services: z.array(pricingServiceInputSchema).max(50),
-    options: z.array(pricingOptionInputSchema).max(100),
-    items: z.array(tariffItemUpdateSchema).max(300),
+    services: z.array(pricingServiceInputSchema).max(50).optional(),
+    options: z.array(pricingOptionInputSchema).max(100).optional(),
+    items: z.array(tariffItemPatchSchema).max(300),
   })
   .superRefine((value, ctx) => {
-    uniqueIds(value.services, ctx, "services", "Коды услуг повторяются");
-    uniqueIds(value.options, ctx, "options", "Коды опций повторяются");
+    uniqueIds(value.services ?? [], ctx, "services", "Коды услуг повторяются");
+    uniqueIds(value.options ?? [], ctx, "options", "Коды опций повторяются");
     uniqueIds(value.items, ctx, "items", "Коды вариантов повторяются");
+
+    const hasCatalog =
+      value.services !== undefined || value.options !== undefined;
+    if (!hasCatalog) {
+      value.items.forEach((item, index) => {
+        if ("category" in item) {
+          ctx.addIssue({
+            code: "custom",
+            message: "Для полного сохранения нужны услуги и опции",
+            path: ["items", index],
+          });
+        }
+      });
+      return;
+    }
+
+    if (!value.services || !value.options) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Для полного сохранения нужны услуги и опции",
+        path: ["services"],
+      });
+      return;
+    }
 
     const serviceIds = new Set(value.services.map((service) => service.id));
     const optionIds = new Set(value.options.map((option) => option.id));
 
     value.items.forEach((item, index) => {
+      if (!("category" in item)) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Нужны полные данные варианта",
+          path: ["items", index],
+        });
+        return;
+      }
+
       if (!serviceIds.has(item.category)) {
         ctx.addIssue({
           code: "custom",
@@ -248,6 +310,13 @@ export const updateTariffsSchema = z
           path: ["items", index, "basePrice"],
         });
       }
+      if (item.isManual && item.optionIds.length > 0) {
+        ctx.addIssue({
+          code: "custom",
+          message: "У позиции «По фото» не может быть опций",
+          path: ["items", index, "optionIds"],
+        });
+      }
       for (const optionId of item.optionIds) {
         if (!optionIds.has(optionId)) {
           ctx.addIssue({
@@ -260,6 +329,8 @@ export const updateTariffsSchema = z
       }
     });
   });
+
+export type UpdateTariffsInput = z.infer<typeof updateTariffsSchema>;
 
 export const updateCompanySchema = z.object({
   name: trimmed(1, 60, "Название компании"),

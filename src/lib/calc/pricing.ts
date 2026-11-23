@@ -2,8 +2,13 @@
  * Расчёт стоимости — единственное место, где живёт формула.
  *
  * Порядок применения:
- *   база → × количество → выбранные опции по порядку (процент или фиксированная
- *   сумма) → сумма позиций → минимум → выезд за город → округление вверх.
+ *   база → × количество → опции строки по порядку (процент / фикс за позицию)
+ *   → сумма позиций → минимум по строкам → фикс за заказ (один раз)
+ *   → выезд за город → округление вверх.
+ *
+ * Минимум применяется, только если есть хотя бы одна строка с известной ценой.
+ * Заказ из одних «По фото» не добивается до минимума: его итог — выезд за
+ * город или 0, а интерфейс показывает «по фото».
  *
  * Опции задаются в кабинете. Старые флаги (`heavySoiling`, `secondSide`) и
  * проценты в правилах сохранены для совместимости: заявки, созданные до
@@ -16,7 +21,7 @@
 
 export type PricingCategory = string;
 
-export type PricingOptionKind = "percent" | "fixed";
+export type PricingOptionKind = "percent" | "fixed" | "fixed_order";
 
 export type PricingOption = {
   id: string;
@@ -87,13 +92,18 @@ export type PricingResult = {
   itemsSubtotal: number;
   minimumAdjustment: number;
   outOfTownFee: number;
-  /** Итог до округления: позиции + минимум + выезд. */
+  /** Фиксированные доплаты «за заказ», один раз на заказ. */
+  orderOptions: AppliedPricingOption[];
+  orderOptionsTotal: number;
+  /** Итог до округления: позиции + минимум + фикс за заказ + выезд. */
   rawTotal: number;
   roundingAdjustment: number;
-  /** Итог заказа; null — все позиции «По фото». */
-  total: number | null;
+  /** Итог заказа; 0 — пустой заказ, для «только по фото» — выезд или 0. */
+  total: number;
   hasManualItems: boolean;
   manualItemsCount: number;
+  /** Есть ли хотя бы одна строка с известной ценой. */
+  hasPricedItems: boolean;
   /** Человекочитаемая расшифровка процентов по позиции, для кабинета. */
   formulas: Record<string, string>;
 };
@@ -118,17 +128,29 @@ function normalizeMoney(value: number): number {
 }
 
 function normalizeOptions(options: PricingOption[]): PricingOption[] {
-  return options
-    .filter((option) => typeof option.id === "string" && option.id.length > 0)
-    .map((option) => ({
-      id: option.id,
-      label: option.label,
-      kind: option.kind === "fixed" ? "fixed" : "percent",
-      value:
-        option.kind === "fixed"
-          ? normalizeMoney(option.value)
-          : normalizePercent(option.value),
-    }));
+  const normalized: PricingOption[] = [];
+
+  for (const option of options) {
+    if (typeof option.id !== "string" || option.id.length === 0) continue;
+
+    if (option.kind === "percent") {
+      normalized.push({
+        id: option.id,
+        label: option.label,
+        kind: "percent",
+        value: normalizePercent(option.value),
+      });
+    } else if (option.kind === "fixed" || option.kind === "fixed_order") {
+      normalized.push({
+        id: option.id,
+        label: option.label,
+        kind: option.kind,
+        value: normalizeMoney(option.value),
+      });
+    }
+  }
+
+  return normalized;
 }
 
 /** Округление половины вверх на целых числах, без float. */
@@ -141,6 +163,7 @@ export function calculateOrder(input: PricingInput): PricingResult {
 
   const lines: PricedLine[] = [];
   const formulas: Record<string, string> = {};
+  const orderOptionsById = new Map<string, AppliedPricingOption>();
 
   let itemsSubtotal = 0;
   let manualItemsCount = 0;
@@ -179,6 +202,12 @@ export function calculateOrder(input: PricingInput): PricingResult {
 
     itemsSubtotal += priced.lineTotal;
 
+    for (const option of priced.orderOptions) {
+      if (!orderOptionsById.has(option.id)) {
+        orderOptionsById.set(option.id, option);
+      }
+    }
+
     lines.push({
       key: item.key,
       category: item.category,
@@ -196,32 +225,44 @@ export function calculateOrder(input: PricingInput): PricingResult {
 
   const minOrder = normalizeMoney(input.rules.minOrder);
   const hasAnyItems = lines.length > 0;
-  const hasPricedItems = itemsSubtotal > 0;
+  const hasPricedItems = lines.some((line) => line.lineTotal !== null);
   const minimumAdjustment =
     hasPricedItems && itemsSubtotal < minOrder ? minOrder - itemsSubtotal : 0;
 
+  const orderOptions = hasPricedItems
+    ? Array.from(orderOptionsById.values())
+    : [];
+  const orderOptionsTotal = orderOptions.reduce(
+    (sum, option) => sum + option.amount,
+    0,
+  );
+
   const outOfTownFee =
-    hasPricedItems && input.outOfTown
+    hasAnyItems && input.outOfTown
       ? normalizeMoney(input.rules.outOfTownFee)
       : 0;
 
-  const rawTotal = itemsSubtotal + minimumAdjustment + outOfTownFee;
+  const rawTotal =
+    itemsSubtotal + minimumAdjustment + orderOptionsTotal + outOfTownFee;
   const total = !hasAnyItems
     ? 0
     : hasPricedItems
       ? Math.ceil(rawTotal / step) * step
-      : null;
+      : outOfTownFee;
 
   return {
     lines,
     itemsSubtotal,
     minimumAdjustment,
     outOfTownFee,
+    orderOptions,
+    orderOptionsTotal,
     rawTotal,
-    roundingAdjustment: total === null ? 0 : total - rawTotal,
+    roundingAdjustment: total - rawTotal,
     total,
     hasManualItems: manualItemsCount > 0,
     manualItemsCount,
+    hasPricedItems,
     formulas,
   };
 }
@@ -234,6 +275,7 @@ function priceLine(args: {
 }): {
   lineTotal: number;
   applied: AppliedPricingOption[];
+  orderOptions: AppliedPricingOption[];
   formula: string;
   heavySoiling: boolean;
   secondSide: boolean;
@@ -248,6 +290,7 @@ function priceLine(args: {
     if (item.secondSide) selected.add("second-side");
 
     const applied: AppliedPricingOption[] = [];
+    const orderOptions: AppliedPricingOption[] = [];
     let running = base * quantity;
 
     for (const option of available) {
@@ -257,16 +300,20 @@ function priceLine(args: {
         const before = running;
         running = roundHalfUpDiv(running * (100 + option.value), 100);
         applied.push({ ...option, amount: running - before });
-      } else {
+      } else if (option.kind === "fixed") {
         const amount = option.value * quantity;
         running += amount;
         applied.push({ ...option, amount });
+      } else {
+        // «За заказ»: в сумму строки не входит, применяется один раз.
+        orderOptions.push({ ...option, amount: option.value });
       }
     }
 
     return {
       lineTotal: running,
       applied,
+      orderOptions,
       formula: formatGenericFormula({
         base,
         quantity,
@@ -318,6 +365,7 @@ function priceLine(args: {
   return {
     lineTotal,
     applied,
+    orderOptions: [],
     formula: formatLineFormula({
       base,
       quantity,

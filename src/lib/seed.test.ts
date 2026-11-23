@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -11,7 +11,7 @@ import {
   setAdminPassword,
 } from "@/lib/auth";
 import { closeDb, getDb, runMigrations } from "@/lib/db";
-import { adminUsers, tariffItems } from "@/lib/db/schema";
+import { adminUsers, tariffItemOptions, tariffItems } from "@/lib/db/schema";
 import { seedDatabase } from "@/lib/seed-data";
 
 const DB_PATH = path.join(process.cwd(), ".data", "seed-test");
@@ -48,7 +48,7 @@ describe("сид владельца", () => {
     expect(rows[0]?.passwordChangedAt).not.toBeNull();
   });
 
-  it("обновляет подписи вариантов, не трогая цену и видимость", async () => {
+  it("не перезаписывает подписи и не возвращает удалённые связи", async () => {
     const db = getDb();
 
     const seeded = await db
@@ -57,15 +57,19 @@ describe("сид владельца", () => {
       .where(eq(tariffItems.id, "chair-seat"));
     expect(seeded[0]?.variantLabel).toBe("Только сиденье");
 
-    // Имитируем установку со старыми подписями и изменёнными ценой/видимостью
+    // Имитируем правки владельца: подпись, цена, видимость и удалённая опция.
     await db
       .update(tariffItems)
       .set({ variantLabel: "Сиденье", basePrice: 555, isActive: false })
       .where(eq(tariffItems.id, "chair-seat"));
     await db
-      .update(tariffItems)
-      .set({ variantLabel: "Сиденье со спинкой" })
-      .where(eq(tariffItems.id, "chair-back"));
+      .delete(tariffItemOptions)
+      .where(
+        and(
+          eq(tariffItemOptions.itemId, "chair-seat"),
+          eq(tariffItemOptions.optionId, "soiling"),
+        ),
+      );
 
     await seedDatabase(db, { requireAdmin: false });
 
@@ -73,15 +77,20 @@ describe("сид владельца", () => {
       .select()
       .from(tariffItems)
       .where(eq(tariffItems.id, "chair-seat"));
-    const back = await db
+    const links = await db
       .select()
-      .from(tariffItems)
-      .where(eq(tariffItems.id, "chair-back"));
+      .from(tariffItemOptions)
+      .where(
+        and(
+          eq(tariffItemOptions.itemId, "chair-seat"),
+          eq(tariffItemOptions.optionId, "soiling"),
+        ),
+      );
 
-    expect(seat[0]?.variantLabel).toBe("Только сиденье");
+    expect(seat[0]?.variantLabel).toBe("Сиденье");
     expect(seat[0]?.basePrice).toBe(555);
     expect(seat[0]?.isActive).toBe(false);
-    expect(back[0]?.variantLabel).toBe("Сиденье и спинка");
+    expect(links).toHaveLength(0);
   });
 
   it("переменная ADMIN_MUST_CHANGE_PASSWORD включает требование смены", async () => {

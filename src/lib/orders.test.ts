@@ -18,8 +18,12 @@ import { closeDb, getDb, runMigrations } from "@/lib/db";
 import {
   adminUsers,
   company,
+  orderItems,
   orderPhotos,
   orders,
+  priceOptions,
+  services,
+  tariffItemOptions,
   tariffItems,
   tariffSettings,
 } from "@/lib/db/schema";
@@ -170,6 +174,40 @@ beforeAll(async () => {
       isActive: true,
     });
   }
+
+  await db
+    .insert(priceOptions)
+    .values([
+      {
+        id: "delivery",
+        label: "Доставка оборудования",
+        kind: "fixed_order",
+        value: 500,
+        sortOrder: 30,
+        isActive: true,
+      },
+      {
+        id: "assembly",
+        label: "Сборка",
+        kind: "fixed",
+        value: 200,
+        sortOrder: 25,
+        isActive: true,
+      },
+    ])
+    .onConflictDoNothing();
+
+  await db
+    .insert(tariffItemOptions)
+    .values([
+      { itemId: "sofa-2", optionId: "soiling" },
+      { itemId: "sofa-3", optionId: "soiling" },
+      { itemId: "sofa-3", optionId: "delivery" },
+      { itemId: "sofa-3", optionId: "assembly" },
+      { itemId: "mattress-double", optionId: "soiling" },
+      { itemId: "mattress-double", optionId: "second-side" },
+    ])
+    .onConflictDoNothing();
 
   png = await sharp({
     create: {
@@ -363,6 +401,289 @@ describe("POST /api/orders", () => {
     expect(response.status).toBe(400);
     const data = (await response.json()) as { error: string };
     expect(data.error).toContain("телефон");
+  });
+
+  it("считает процентную опцию по id, присланному браузером", async () => {
+    const payload = basePayload({
+      items: [
+        {
+          tariffId: "sofa-3",
+          quantity: 1,
+          heavySoiling: false,
+          secondSide: false,
+          optionIds: ["soiling"],
+        },
+      ],
+    });
+    const response = await postOrder(payload, [], "10.0.0.12");
+    expect(response.status).toBe(201);
+    const data = (await response.json()) as { token: string };
+    const order = await getPublicOrder(getDb(), data.token);
+    expect(order?.totals.total).toBe(4160);
+    expect(order?.items[0]?.options[0]?.kind).toBe("percent");
+    expect(order?.items[0]?.options[0]?.value).toBe(30);
+    expect(order?.items[0]?.options[0]?.amount).toBe(960);
+  });
+
+  it("умножает фикс за позицию на количество", async () => {
+    const payload = basePayload({
+      items: [
+        {
+          tariffId: "sofa-3",
+          quantity: 2,
+          heavySoiling: false,
+          secondSide: false,
+          optionIds: ["assembly"],
+        },
+      ],
+    });
+    const response = await postOrder(payload, [], "10.0.0.13");
+    expect(response.status).toBe(201);
+    const data = (await response.json()) as { token: string };
+    const order = await getPublicOrder(getDb(), data.token);
+    expect(order?.items[0]?.lineTotal).toBe(6800);
+    expect(order?.totals.total).toBe(6800);
+  });
+
+  it("добавляет фикс за заказ один раз и не дублирует его", async () => {
+    const payload = basePayload({
+      items: [
+        {
+          tariffId: "sofa-3",
+          quantity: 2,
+          heavySoiling: false,
+          secondSide: false,
+          optionIds: ["delivery"],
+        },
+        {
+          tariffId: "sofa-3",
+          quantity: 1,
+          heavySoiling: false,
+          secondSide: false,
+          optionIds: ["delivery"],
+        },
+      ],
+    });
+    const response = await postOrder(payload, [], "10.0.0.14");
+    expect(response.status).toBe(201);
+    const data = (await response.json()) as { token: string };
+    const order = await getPublicOrder(getDb(), data.token);
+    expect(order?.totals.itemsSubtotal).toBe(9600);
+    expect(order?.totals.orderOptionsTotal).toBe(500);
+    expect(order?.totals.total).toBe(10100);
+  });
+
+  it("не принимает опцию, не привязанную к варианту", async () => {
+    const payload = basePayload({
+      items: [
+        {
+          tariffId: "sofa-2",
+          quantity: 1,
+          heavySoiling: false,
+          secondSide: false,
+          optionIds: ["delivery"],
+        },
+      ],
+    });
+    const response = await postOrder(payload, [], "10.0.0.15");
+    expect(response.status).toBe(400);
+    const data = (await response.json()) as { error: string };
+    expect(data.error).toContain("опция");
+  });
+
+  it("не принимает опции для позиции «По фото»", async () => {
+    const payload = basePayload({
+      items: [
+        {
+          tariffId: "other",
+          quantity: 1,
+          heavySoiling: false,
+          secondSide: false,
+          optionIds: ["soiling"],
+          manualDescription: "Изголовье кровати и две подушки",
+        },
+      ],
+    });
+    const response = await postOrder(
+      payload,
+      [{ index: 0, blob: new Blob([new Uint8Array(png)]) }],
+      "10.0.0.16",
+    );
+    expect(response.status).toBe(400);
+    const data = (await response.json()) as { error: string };
+    expect(data.error).toContain("опции");
+  });
+
+  it("не принимает вариант неактивной услуги", async () => {
+    const db = getDb();
+    await db
+      .insert(services)
+      .values({
+        id: "windows",
+        label: "Окна",
+        hint: "",
+        icon: "other",
+        sortOrder: 200,
+        isActive: true,
+      })
+      .onConflictDoNothing();
+    await db
+      .insert(tariffItems)
+      .values({
+        id: "window-3",
+        category: "windows",
+        label: "Окно",
+        variantLabel: "3 створки",
+        basePrice: 3000,
+        isManual: false,
+        sortOrder: 200,
+        isActive: true,
+      })
+      .onConflictDoNothing();
+
+    const payload = basePayload({
+      items: [
+        {
+          tariffId: "window-3",
+          quantity: 1,
+          heavySoiling: false,
+          secondSide: false,
+        },
+      ],
+    });
+    const first = await postOrder(payload, [], "10.0.0.17");
+    expect(first.status).toBe(201);
+
+    await db
+      .update(services)
+      .set({ isActive: false })
+      .where(eq(services.id, "windows"));
+
+    const second = await postOrder(
+      { ...payload, idempotencyKey: `key-${Math.random().toString(36).slice(2, 12)}cccccc` },
+      [],
+      "10.0.0.18",
+    );
+    expect(second.status).toBe(400);
+    const data = (await second.json()) as { error: string };
+    expect(data.error).toContain("нет в прайсе");
+  });
+
+  it("для заказа только «По фото» не применяет минимум", async () => {
+    const payload = basePayload({
+      items: [
+        {
+          tariffId: "other",
+          quantity: 1,
+          heavySoiling: false,
+          secondSide: false,
+          manualDescription: "Изголовье кровати и две подушки",
+        },
+      ],
+    });
+    const response = await postOrder(
+      payload,
+      [{ index: 0, blob: new Blob([new Uint8Array(png)]) }],
+      "10.0.0.19",
+    );
+    expect(response.status).toBe(201);
+    const data = (await response.json()) as { token: string };
+    const order = await getPublicOrder(getDb(), data.token);
+    expect(order?.totals.total).toBe(0);
+    expect(order?.totals.minimumAdjustment).toBe(0);
+    expect(order?.totals.hasManualItems).toBe(true);
+  });
+
+  it("для «только по фото» с выездом берёт только выезд", async () => {
+    const payload = basePayload({
+      customer: { ...basePayload().customer, outOfTown: true },
+      items: [
+        {
+          tariffId: "other",
+          quantity: 1,
+          heavySoiling: false,
+          secondSide: false,
+          manualDescription: "Изголовье кровати и две подушки",
+        },
+      ],
+    });
+    const response = await postOrder(
+      payload,
+      [{ index: 0, blob: new Blob([new Uint8Array(png)]) }],
+      "10.0.0.20",
+    );
+    expect(response.status).toBe(201);
+    const data = (await response.json()) as { token: string };
+    const order = await getPublicOrder(getDb(), data.token);
+    expect(order?.totals.total).toBe(500);
+    expect(order?.totals.minimumAdjustment).toBe(0);
+  });
+
+  it("хранит kind и value опции в снимке и не пересчитывает старую заявку", async () => {
+    const payload = basePayload({
+      items: [
+        {
+          tariffId: "sofa-3",
+          quantity: 1,
+          heavySoiling: false,
+          secondSide: false,
+          optionIds: ["soiling"],
+        },
+      ],
+    });
+    const response = await postOrder(payload, [], "10.0.0.21");
+    expect(response.status).toBe(201);
+    const data = (await response.json()) as { token: string };
+
+    const before = await getDb()
+      .select({ snapshot: orders.priceSnapshot, breakdown: orders.breakdown })
+      .from(orders)
+      .where(eq(orders.token, data.token))
+      .limit(1);
+    const snapshotOption = before[0]?.snapshot.tariff
+      .find((item) => item.key === "sofa-3")
+      ?.options?.find((option) => option.id === "soiling");
+    expect(snapshotOption?.kind).toBe("percent");
+    expect(snapshotOption?.value).toBe(30);
+
+    await getDb()
+      .update(priceOptions)
+      .set({ value: 99 })
+      .where(eq(priceOptions.id, "soiling"));
+
+    const order = await getPublicOrder(getDb(), data.token);
+    expect(order?.totals.total).toBe(4160);
+    expect(order?.items[0]?.options[0]?.value).toBe(30);
+
+    await getDb()
+      .update(priceOptions)
+      .set({ value: 30 })
+      .where(eq(priceOptions.id, "soiling"));
+  });
+
+  it("пишет в order_items опции строки без фикса за заказ", async () => {
+    const payload = basePayload({
+      items: [
+        {
+          tariffId: "sofa-3",
+          quantity: 1,
+          heavySoiling: false,
+          secondSide: false,
+          optionIds: ["soiling", "delivery"],
+        },
+      ],
+    });
+    const response = await postOrder(payload, [], "10.0.0.22");
+    expect(response.status).toBe(201);
+    const data = (await response.json()) as { token: string };
+    const order = await getPublicOrder(getDb(), data.token);
+    const rows = await getDb()
+      .select({ options: orderItems.options })
+      .from(orderItems)
+      .innerJoin(orders, eq(orders.id, orderItems.orderId))
+      .where(eq(orders.token, data.token));
+    expect(rows[0]?.options?.map((option) => option.id)).toEqual(["soiling"]);
+    expect(order?.totals.orderOptionsTotal).toBe(500);
   });
 });
 

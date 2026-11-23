@@ -205,7 +205,11 @@ export default async function AdminOrdersPage({
                     : row.desiredDate
                       ? `${formatDate(row.desiredDate)}${row.desiredTimeFrom ? `, ${formatTimeRange(row.desiredTimeFrom, row.desiredTimeTo)}` : ""}`
                       : "уточняется";
-                  const price = row.finalPrice ?? row.estimatedTotal;
+                  const allManual =
+                    row.itemsCount > 0 && row.manualCount === row.itemsCount;
+                  const price =
+                    row.finalPrice ??
+                    (allManual ? null : row.estimatedTotal);
 
                   return (
                     <tr key={row.id} className="group">
@@ -261,7 +265,10 @@ export default async function AdminOrdersPage({
 
           <div className="mt-4 grid gap-2.5 md:hidden">
             {rows.map((row) => {
-              const price = row.finalPrice ?? row.estimatedTotal;
+              const allManual =
+                row.itemsCount > 0 && row.manualCount === row.itemsCount;
+              const price =
+                row.finalPrice ?? (allManual ? null : row.estimatedTotal);
               const when = row.agreedDate
                 ? `${formatDate(row.agreedDate)}, ${formatTimeRange(row.agreedTimeFrom, row.agreedTimeTo)}`
                 : row.desiredDate

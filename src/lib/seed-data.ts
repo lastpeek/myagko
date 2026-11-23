@@ -244,8 +244,10 @@ export async function seedDatabase(
       .onConflictDoNothing();
   }
 
+  const insertedTariffIds = new Set<string>();
+
   for (const item of DEFAULT_TARIFFS) {
-    await db
+    const inserted = await db
       .insert(tariffItems)
       .values({
         id: item.id,
@@ -260,10 +262,16 @@ export async function seedDatabase(
         sortOrder: item.sortOrder,
         isActive: true,
       })
-      .onConflictDoNothing();
+      .onConflictDoNothing()
+      .returning({ id: tariffItems.id });
+
+    if (inserted[0]) insertedTariffIds.add(inserted[0].id);
   }
 
+  // Связи создаём только для только что добавленных вариантов. Иначе рестарт
+  // с SEED_ON_START=1 возвращал бы опции, которые владелец убрал в кабинете.
   const defaultLinks = DEFAULT_TARIFFS.flatMap((item) => {
+    if (!insertedTariffIds.has(item.id)) return [];
     const links: { itemId: string; optionId: string }[] = [];
     if (item.allowsSoiling) {
       links.push({ itemId: item.id, optionId: "soiling" });
@@ -278,14 +286,7 @@ export async function seedDatabase(
     await db.insert(tariffItemOptions).values(defaultLinks).onConflictDoNothing();
   }
 
-  // Подписи вариантов могли измениться в шаблоне. Обновляем только текст:
-  // цены, видимость и флаги существующих строк не трогаем.
-  for (const item of DEFAULT_TARIFFS) {
-    await db
-      .update(tariffItems)
-      .set({ variantLabel: item.variantLabel })
-      .where(eq(tariffItems.id, item.id));
-  }
+  // Существующие подписи вариантов не перезаписываем: их может менять владелец.
 
   const email = process.env.ADMIN_EMAIL?.trim().toLowerCase();
   const password = process.env.ADMIN_PASSWORD;

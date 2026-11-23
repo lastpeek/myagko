@@ -17,6 +17,7 @@ import {
   orderPhotos,
   orders,
   priceOptions,
+  services,
   tariffItemOptions,
   tariffItems,
   tariffSettings,
@@ -106,24 +107,33 @@ async function loadItemOptions(
     db
       .select()
       .from(priceOptions)
-      .where(eq(priceOptions.isActive, true))
       .orderBy(asc(priceOptions.sortOrder), asc(priceOptions.id)),
   ]);
 
-  const optionById = new Map(rows.map((row) => [row.id, row]));
-  const byItem = new Map<string, PricingOption[]>();
+  // Наличие хотя бы одной строки в каталоге означает, что база уже перешла
+  // на опции. Тогда отсутствие связи — это «у варианта нет опций», а не
+  // повод применить старые флаги.
+  const hasCatalog = rows.length > 0;
+  const activeRows = rows.filter((row) => row.isActive);
+  const linkSet = new Set(
+    links.map((link) => `${link.itemId}\u0000${link.optionId}`),
+  );
 
-  for (const link of links) {
-    const option = optionById.get(link.optionId);
-    if (!option) continue;
-    const list = byItem.get(link.itemId) ?? [];
-    list.push(toPricingOption(option));
-    byItem.set(link.itemId, list);
+  const byItem = new Map<string, PricingOption[]>();
+  if (hasCatalog) {
+    for (const itemId of itemIds) {
+      byItem.set(
+        itemId,
+        activeRows
+          .filter((option) => linkSet.has(`${itemId}\u0000${option.id}`))
+          .map(toPricingOption),
+      );
+    }
   }
 
   return {
     byItem,
-    catalog: rows.map(toPricingOption),
+    catalog: activeRows.map(toPricingOption),
   };
 }
 
@@ -202,7 +212,13 @@ export async function createOrder(
     overrides.company ??
     (await loadCompanyOrDefaults(db));
   const settings = overrides.settings ?? (await loadSettings(db));
-  const tariffs = overrides.tariffs ?? (await loadActiveTariffs(db));
+  const [allTariffs, activeServiceIds] = await Promise.all([
+    overrides.tariffs ?? loadActiveTariffs(db),
+    loadActiveServiceIds(db),
+  ]);
+  const tariffs = allTariffs.filter((tariff) =>
+    activeServiceIds.has(tariff.category),
+  );
   const itemOptions = await loadItemOptions(
     db,
     tariffs.map((tariff) => tariff.id),
@@ -259,7 +275,14 @@ export async function createOrder(
     }
 
     const availableOptions = itemOptions.byItem.get(tariff.id);
-    const selectedOptionIds = item.optionIds ?? [];
+    const selectedOptionIds = Array.from(new Set(item.optionIds ?? []));
+
+    if (tariff.isManual && selectedOptionIds.length > 0) {
+      throw new OrderValidationError(
+        `items.${index}.optionIds`,
+        "Для позиции «По фото» опции не применяются",
+      );
+    }
 
     if (availableOptions !== undefined) {
       const availableIds = new Set(
@@ -382,6 +405,8 @@ export async function createOrder(
     itemsSubtotal: calculation.itemsSubtotal,
     minimumAdjustment: calculation.minimumAdjustment,
     outOfTownFee: calculation.outOfTownFee,
+    orderOptions: calculation.orderOptions,
+    orderOptionsTotal: calculation.orderOptionsTotal,
     roundingAdjustment: calculation.roundingAdjustment,
     total: calculation.total,
     hasManualItems: calculation.hasManualItems,
@@ -639,6 +664,14 @@ async function loadActiveTariffs(
     .orderBy(asc(tariffItems.sortOrder));
 }
 
+async function loadActiveServiceIds(db: Database): Promise<Set<string>> {
+  const rows = await db
+    .select({ id: services.id })
+    .from(services)
+    .where(eq(services.isActive, true));
+  return new Set(rows.map((row) => row.id));
+}
+
 export type PublicOrderPhoto = {
   id: string;
   width: number;
@@ -677,6 +710,7 @@ export type PublicOrder = {
     itemsSubtotal: number;
     minimumAdjustment: number;
     outOfTownFee: number;
+    orderOptionsTotal: number;
     roundingAdjustment: number;
     total: number | null;
     minOrder: number;
@@ -765,6 +799,7 @@ export async function getPublicOrder(
       itemsSubtotal: order.breakdown.itemsSubtotal,
       minimumAdjustment: order.breakdown.minimumAdjustment,
       outOfTownFee: order.breakdown.outOfTownFee,
+      orderOptionsTotal: order.breakdown.orderOptionsTotal ?? 0,
       roundingAdjustment: order.breakdown.roundingAdjustment,
       total: order.breakdown.total,
       minOrder: order.breakdown.minOrder,

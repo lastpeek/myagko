@@ -70,6 +70,9 @@ export default async function AdminOrderPage({
 
   const { order, items, photos, events } = detail;
   const normalized = normalizePhone(order.phone) ?? order.phone;
+  const allManual =
+    order.breakdown.lines.length > 0 &&
+    order.breakdown.manualItemsCount === order.breakdown.lines.length;
 
   const desired =
     order.desiredDate
@@ -251,9 +254,11 @@ export default async function AdminOrderPage({
                   {order.finalPrice !== null ? "Согласовано" : "Предварительно"}
                 </span>
                 <span className="tabular text-[17px] font-semibold">
-                  {order.breakdown.total === null
-                    ? "По фото"
-                    : formatRub(order.finalPrice ?? order.breakdown.total)}
+                  {order.finalPrice !== null
+                    ? formatRub(order.finalPrice)
+                    : allManual
+                      ? "По фото"
+                      : formatRub(order.breakdown.total)}
                 </span>
               </div>
             </div>

@@ -179,7 +179,7 @@ describe("calculateOrder", () => {
     expect(result.lines[1]?.lineTotal).toBeNull();
   });
 
-  it("для заказа только из «Другого» не выдумывает сумму", () => {
+  it("для заказа только из «Другого» не применяет минимум", () => {
     const result = calc([
       {
         key: "other-1",
@@ -189,12 +189,14 @@ describe("calculateOrder", () => {
         manual: true,
       },
     ]);
-    expect(result.total).toBeNull();
+    expect(result.total).toBe(0);
+    expect(result.hasPricedItems).toBe(false);
     expect(result.hasManualItems).toBe(true);
     expect(result.minimumAdjustment).toBe(0);
+    expect(result.orderOptionsTotal).toBe(0);
   });
 
-  it("не применяет минимум к заказу без известных цен", () => {
+  it("для «только по фото» добавляет выезд, но не минимум", () => {
     const result = calc(
       [
         {
@@ -207,8 +209,10 @@ describe("calculateOrder", () => {
       ],
       { outOfTown: true },
     );
-    expect(result.total).toBeNull();
-    expect(result.outOfTownFee).toBe(0);
+    expect(result.total).toBe(500);
+    expect(result.outOfTownFee).toBe(500);
+    expect(result.minimumAdjustment).toBe(0);
+    expect(result.hasPricedItems).toBe(false);
   });
 
   it("суммирует несколько позиций", () => {
@@ -272,5 +276,126 @@ describe("calculateOrder", () => {
       outOfTown: false,
     });
     expect(result.total).toBe(5100);
+  });
+
+  it("применяет процентную опцию по optionIds", () => {
+    const result = calc([
+      {
+        key: "sofa-3",
+        category: "sofa",
+        basePrice: 3200,
+        quantity: 1,
+        options: [
+          { id: "soiling", label: "Загрязнения", kind: "percent", value: 30 },
+        ],
+        optionIds: ["soiling"],
+      },
+    ]);
+    expect(result.lines[0]?.lineTotal).toBe(4160);
+    expect(result.lines[0]?.options[0]?.amount).toBe(960);
+    expect(result.total).toBe(4160);
+  });
+
+  it("умножает фикс за позицию на количество", () => {
+    const result = calc([
+      {
+        key: "custom",
+        category: "other",
+        basePrice: 3000,
+        quantity: 2,
+        options: [
+          { id: "assembly", label: "Сборка", kind: "fixed", value: 200 },
+        ],
+        optionIds: ["assembly"],
+      },
+    ]);
+    expect(result.lines[0]?.lineTotal).toBe(6400);
+    expect(result.lines[0]?.options[0]?.amount).toBe(400);
+    expect(result.total).toBe(6400);
+  });
+
+  it("добавляет фикс за заказ один раз, не умножая на количество", () => {
+    const result = calc([
+      {
+        key: "custom",
+        category: "other",
+        basePrice: 3000,
+        quantity: 3,
+        options: [
+          { id: "delivery", label: "Доставка", kind: "fixed_order", value: 500 },
+        ],
+        optionIds: ["delivery"],
+      },
+    ]);
+    expect(result.lines[0]?.lineTotal).toBe(9000);
+    expect(result.orderOptionsTotal).toBe(500);
+    expect(result.total).toBe(9500);
+  });
+
+  it("не дублирует фикс за заказ на нескольких позициях", () => {
+    const option = {
+      id: "delivery",
+      label: "Доставка",
+      kind: "fixed_order" as const,
+      value: 500,
+    };
+    const result = calc([
+      {
+        key: "a",
+        category: "other",
+        basePrice: 3000,
+        quantity: 1,
+        options: [option],
+        optionIds: ["delivery"],
+      },
+      {
+        key: "b",
+        category: "other",
+        basePrice: 3000,
+        quantity: 1,
+        options: [option],
+        optionIds: ["delivery"],
+      },
+    ]);
+    expect(result.orderOptions).toHaveLength(1);
+    expect(result.orderOptionsTotal).toBe(500);
+    expect(result.total).toBe(6500);
+  });
+
+  it("применяет процент и фикс в заданном порядке", () => {
+    const result = calc([
+      {
+        key: "custom",
+        category: "other",
+        basePrice: 3000,
+        quantity: 1,
+        options: [
+          { id: "assembly", label: "Сборка", kind: "fixed", value: 200 },
+          { id: "rush", label: "Срочность", kind: "percent", value: 10 },
+        ],
+        optionIds: ["assembly", "rush"],
+      },
+    ]);
+    expect(result.lines[0]?.lineTotal).toBe(3520);
+    expect(result.total).toBe(3520);
+  });
+
+  it("не применяет фикс за заказ к минимуму", () => {
+    const result = calc([
+      {
+        key: "chair",
+        category: "chair",
+        basePrice: 500,
+        quantity: 1,
+        options: [
+          { id: "delivery", label: "Доставка", kind: "fixed_order", value: 2000 },
+        ],
+        optionIds: ["delivery"],
+      },
+    ]);
+    expect(result.itemsSubtotal).toBe(500);
+    expect(result.minimumAdjustment).toBe(2000);
+    expect(result.orderOptionsTotal).toBe(2000);
+    expect(result.total).toBe(4500);
   });
 });

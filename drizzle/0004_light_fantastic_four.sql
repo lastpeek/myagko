@@ -1,4 +1,4 @@
-CREATE TABLE "price_options" (
+CREATE TABLE IF NOT EXISTS "price_options" (
 	"id" text PRIMARY KEY NOT NULL,
 	"label" text NOT NULL,
 	"kind" text NOT NULL,
@@ -8,7 +8,7 @@ CREATE TABLE "price_options" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "services" (
+CREATE TABLE IF NOT EXISTS "services" (
 	"id" text PRIMARY KEY NOT NULL,
 	"label" text NOT NULL,
 	"hint" text DEFAULT '' NOT NULL,
@@ -18,18 +18,34 @@ CREATE TABLE "services" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "tariff_item_options" (
+CREATE TABLE IF NOT EXISTS "tariff_item_options" (
 	"item_id" text NOT NULL,
 	"option_id" text NOT NULL,
 	CONSTRAINT "tariff_item_options_item_id_option_id_pk" PRIMARY KEY("item_id","option_id")
 );
 --> statement-breakpoint
-ALTER TABLE "order_items" ADD COLUMN "options" jsonb;--> statement-breakpoint
-ALTER TABLE "tariff_item_options" ADD CONSTRAINT "tariff_item_options_item_id_tariff_items_id_fk" FOREIGN KEY ("item_id") REFERENCES "public"."tariff_items"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "tariff_item_options" ADD CONSTRAINT "tariff_item_options_option_id_price_options_id_fk" FOREIGN KEY ("option_id") REFERENCES "public"."price_options"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "price_options_sort_idx" ON "price_options" USING btree ("sort_order");--> statement-breakpoint
-CREATE INDEX "services_sort_idx" ON "services" USING btree ("sort_order");--> statement-breakpoint
-CREATE INDEX "tariff_item_options_option_idx" ON "tariff_item_options" USING btree ("option_id");--> statement-breakpoint
+ALTER TABLE "order_items" ADD COLUMN IF NOT EXISTS "options" jsonb;--> statement-breakpoint
+DO $$
+BEGIN
+	IF NOT EXISTS (
+		SELECT 1 FROM pg_constraint
+		WHERE conname = 'tariff_item_options_item_id_tariff_items_id_fk'
+	) THEN
+		ALTER TABLE "tariff_item_options" ADD CONSTRAINT "tariff_item_options_item_id_tariff_items_id_fk" FOREIGN KEY ("item_id") REFERENCES "public"."tariff_items"("id") ON DELETE cascade ON UPDATE no action;
+	END IF;
+END $$;--> statement-breakpoint
+DO $$
+BEGIN
+	IF NOT EXISTS (
+		SELECT 1 FROM pg_constraint
+		WHERE conname = 'tariff_item_options_option_id_price_options_id_fk'
+	) THEN
+		ALTER TABLE "tariff_item_options" ADD CONSTRAINT "tariff_item_options_option_id_price_options_id_fk" FOREIGN KEY ("option_id") REFERENCES "public"."price_options"("id") ON DELETE cascade ON UPDATE no action;
+	END IF;
+END $$;--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "price_options_sort_idx" ON "price_options" USING btree ("sort_order");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "services_sort_idx" ON "services" USING btree ("sort_order");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "tariff_item_options_option_idx" ON "tariff_item_options" USING btree ("option_id");--> statement-breakpoint
 INSERT INTO "services" ("id", "label", "hint", "icon", "sort_order", "is_active") VALUES
 	('sofa', 'Диваны', '2, 3 места, угловой', 'sofa', 10, true),
 	('armchair', 'Кресла', 'Обычное или с откидной спинкой', 'armchair', 20, true),

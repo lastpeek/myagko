@@ -60,7 +60,10 @@ export function CheckoutForm({
     }
   }, [hydrated, items.length, busy, router]);
 
-  const totalLabel = result.total === null ? "По фото" : formatRub(result.total);
+  const allManual =
+    result.lines.length > 0 &&
+    result.manualItemsCount === result.lines.length;
+  const totalLabel = allManual ? "По фото" : formatRub(result.total);
   const missingText = photosMissingText(items);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -180,7 +183,6 @@ export function CheckoutForm({
     );
   }
 
-  const total = result.total;
   const manualHasPhotoIssue = items.some(
     (item) => item.category === "other" && item.photos.length === 0,
   );
@@ -529,7 +531,7 @@ export function CheckoutForm({
                 Предварительно
               </div>
               <div className="tabular text-[21px] font-semibold leading-7 tracking-[-0.02em]">
-                {total === null ? "По фото" : formatRub(total)}
+                {totalLabel}
               </div>
             </div>
             <button

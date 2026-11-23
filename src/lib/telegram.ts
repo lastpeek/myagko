@@ -301,6 +301,7 @@ export async function notifyNewOrder(
         publicNumber: orders.publicNumber,
         estimatedTotal: orders.estimatedTotal,
         finalPrice: orders.finalPrice,
+        breakdown: orders.breakdown,
       })
       .from(orders)
       .where(eq(orders.id, orderId))
@@ -323,9 +324,15 @@ export async function notifyNewOrder(
       process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"
     ).replace(/\/$/, "");
 
+    const allManual =
+      order.breakdown.lines.length > 0 &&
+      order.breakdown.lines.every((line) => line.lineTotal === null);
+
     const text = buildOrderNotification({
       number: order.publicNumber,
-      total: order.finalPrice ?? order.estimatedTotal,
+      total:
+        order.finalPrice ??
+        (allManual ? null : order.estimatedTotal),
       items,
       adminUrl: `${siteUrl}/admin/orders/${order.id}`,
     });
