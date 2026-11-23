@@ -19,7 +19,7 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
 export async function generateMetadata(): Promise<Metadata> {
   const company = await getCompany();
-  const title = `${company.name} — химчистка мягкой мебели в ${company.city}`;
+  const title = `${company.name} — услуги на выезде в ${company.city}`;
 
   return {
     metadataBase: new URL(siteUrl),
@@ -28,7 +28,7 @@ export async function generateMetadata(): Promise<Metadata> {
       template: `%s — ${company.name}`,
     },
     description:
-      "Выездная химчистка диванов, кресел, матрасов и стульев. Предварительная цена сразу, точную мастер подтвердит после фото.",
+      "Услуги на выезде. Выберите вариант, укажите объём и отправьте заявку. Предварительная цена сразу, точную мастер подтвердит после фото.",
     applicationName: company.name,
     formatDetection: { telephone: true, address: true, email: true },
     manifest: "/manifest.webmanifest",
@@ -47,7 +47,7 @@ export async function generateMetadata(): Promise<Metadata> {
       siteName: company.name,
       title,
       description:
-        "Выберите мебель, приложите фото и отправьте заявку. Цена — сразу, без переписки.",
+        "Выберите услугу, приложите фото и отправьте заявку. Цена — сразу, без переписки.",
       images: [{ url: "/og.png", width: 1200, height: 630, alt: company.name }],
     },
     robots: { index: true, follow: true },

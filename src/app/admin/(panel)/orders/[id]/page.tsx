@@ -222,7 +222,7 @@ export default async function AdminOrderPage({
 
             <div className="border-t border-line bg-surface-2/40 px-4 py-3.5 md:px-5">
               <div className="flex items-baseline justify-between gap-3 text-[13px] text-ink-2">
-                <span>Чистка</span>
+                <span>Работы</span>
                 <span className="tabular">{formatRub(order.breakdown.itemsSubtotal)}</span>
               </div>
               {order.breakdown.minimumAdjustment > 0 ? (

@@ -220,7 +220,7 @@ export default async function OrderPage({
 
         <section className="card mt-4 p-4 md:p-5" aria-label="Расчёт">
           <div className="flex items-baseline justify-between gap-3 py-1 text-[13.5px] text-ink-2">
-            <span>Чистка</span>
+            <span>Работы</span>
             <span className="tabular">{formatRub(order.totals.itemsSubtotal)}</span>
           </div>
           {order.totals.minimumAdjustment > 0 ? (
@@ -266,7 +266,7 @@ export default async function OrderPage({
             <InfoIcon className="mt-0.5 h-3.5 w-3.5 flex-none text-accent" />
             <span>
               Цены предварительные. Итоговую стоимость мастер подтверждает после
-              осмотра. Минимальный заказ за чистку —{" "}
+              осмотра. Минимальный заказ за работы —{" "}
               {formatRub(order.totals.minOrder)}.
             </span>
           </div>

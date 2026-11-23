@@ -3,13 +3,7 @@ import type { Metadata } from "next";
 import { CartView } from "@/components/cart-view";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
-import {
-  getActiveTariffItems,
-  getCompany,
-  getSettings,
-  toPricingRules,
-  toPublicTariff,
-} from "@/lib/company";
+import { getCompany, getPricingCatalog, getSettings } from "@/lib/company";
 import { normalizePhone } from "@/lib/phone";
 
 export const metadata: Metadata = {
@@ -20,9 +14,9 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function CartPage() {
-  const [company, tariffRows, settings] = await Promise.all([
+  const [company, catalog, settings] = await Promise.all([
     getCompany(),
-    getActiveTariffItems(),
+    getPricingCatalog(),
     getSettings(),
   ]);
 
@@ -33,8 +27,12 @@ export default async function CartPage() {
       <SiteHeader name={company.name} city={company.city} />
       <main>
         <CartView
-          tariffs={tariffRows.map((item) => toPublicTariff(item))}
-          rules={toPricingRules(settings)}
+          tariffs={catalog.tariffs}
+          rules={catalog.rules}
+          orderOptions={catalog.options.filter(
+            (option) =>
+              option.kind === "fixed_order" && option.scope === "order",
+          )}
           maxPhotos={settings.maxPhotosPerItem}
           otherRequiresPhoto={company.otherRequiresPhoto}
         />

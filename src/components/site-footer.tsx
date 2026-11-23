@@ -24,7 +24,7 @@ export function SiteFooter({
             <span className="text-[15px] font-semibold">{name}</span>
           </div>
           <p className="small mt-3 max-w-[36ch] text-ink-2">
-            Выездная химчистка мягкой мебели. {city} и пригород.
+            Услуги на выезде. {city} и пригород.
           </p>
         </div>
 

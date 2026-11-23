@@ -6,11 +6,9 @@ import { ChevronRightIcon, PhoneIcon } from "@/components/icons";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import {
-  getActiveTariffItems,
   getCompany,
+  getPricingCatalog,
   getSettings,
-  toPublicTariff,
-  toPricingRules,
 } from "@/lib/company";
 import { getDb } from "@/lib/db";
 import { formatRub } from "@/lib/format";
@@ -19,32 +17,31 @@ import { formatPhone, normalizePhone, phoneHref } from "@/lib/phone";
 
 export const dynamic = "force-dynamic";
 
-const CATEGORY_LABEL: Record<string, string> = {
-  sofa: "Диваны",
-  armchair: "Кресла",
-  mattress: "Матрасы",
-  chair: "Стулья",
-  other: "Другое",
-};
-
 export default async function HomePage() {
-  const [company, tariffRows, settings, gallery] = await Promise.all([
+  const [company, catalog, settings, gallery] = await Promise.all([
     getCompany(),
-    getActiveTariffItems(),
+    getPricingCatalog(),
     getSettings(),
     listGalleryPhotos(getDb(), { visibleOnly: true }),
   ]);
 
-  const tariffs = tariffRows.map((item) => toPublicTariff(item));
-  const rules = toPricingRules(settings);
+  const rules = catalog.rules;
   const normalized = normalizePhone(company.phone) ?? company.phone;
 
-  const groups = ["sofa", "armchair", "mattress", "chair", "other"]
+  const groups = catalog.services
     .map((category) => ({
-      category,
-      items: tariffs.filter((item) => item.category === category),
+      ...category,
+      services: catalog.catalogServices
+        .filter((service) => service.categoryId === category.id)
+        .map((service) => ({
+          ...service,
+          variants: catalog.tariffs.filter(
+            (variant) => variant.serviceId === service.id,
+          ),
+        }))
+        .filter((service) => service.variants.length > 0),
     }))
-    .filter((group) => group.items.length > 0);
+    .filter((category) => category.services.length > 0);
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -64,43 +61,54 @@ export default async function HomePage() {
       <main>
         <div id="pick">
           <Configurator
-            tariffs={tariffs}
+            categories={catalog.services}
+            catalogServices={catalog.catalogServices}
+            tariffs={catalog.tariffs}
+            rules={rules}
             heroTitle={company.heroTitle}
             heroSubtitle={company.heroSubtitle}
-            minOrder={rules.minOrder}
             maxPhotos={settings.maxPhotosPerItem}
           />
         </div>
 
         <section className="mx-auto mt-14 w-full max-w-[1120px] px-5 md:mt-20 md:px-8 lg:px-10">
           <div className="kicker">Услуги и цены</div>
-          <h2 className="h2 mt-2">Сколько стоит чистка</h2>
+          <h2 className="h2 mt-2">Сколько стоит</h2>
           <p className="body mt-2 max-w-[58ch] text-ink-2">
-            Это предварительные цены за одну сторону. Точную стоимость мастер
+            Это предварительные цены за одну единицу. Точную стоимость мастер
             подтвердит после фото или осмотра.
           </p>
 
           <div className="mt-6 grid gap-2.5 md:grid-cols-2">
-            {groups.map((group) => (
-              <div key={group.category} className="card p-5 md:p-6">
-                <h3 className="h3">{CATEGORY_LABEL[group.category]}</h3>
-                <dl className="mt-3 grid gap-2">
-                  {group.items.map((item) => (
-                    <div
-                      key={item.id}
-                      className="flex items-baseline justify-between gap-4 border-t border-line pt-2 first:border-0 first:pt-0"
-                    >
-                      <dt className="text-[14px] text-ink-2">
-                        {group.category === "other"
-                          ? "Цена по фото"
-                          : item.variantLabel}
-                      </dt>
-                      <dd className="tabular text-[14px] font-semibold">
-                        {item.isManual ? "по фото" : formatRub(item.basePrice)}
-                      </dd>
+            {groups.map((category) => (
+              <div key={category.id} className="card p-5 md:p-6">
+                <h3 className="h3">{category.label}</h3>
+                <div className="mt-3 grid gap-3">
+                  {category.services.map((service) => (
+                    <div key={service.id}>
+                      <div className="label text-ink-2">{service.label}</div>
+                      <dl className="mt-1 grid gap-1.5">
+                        {service.variants.map((item) => (
+                          <div
+                            key={item.id}
+                            className="flex items-baseline justify-between gap-4 border-t border-line pt-1.5 first:border-0 first:pt-0"
+                          >
+                            <dt className="text-[14px] text-ink-2">
+                              {item.variantLabel}
+                            </dt>
+                            <dd className="tabular whitespace-nowrap text-[14px] font-semibold">
+                              {item.isManual
+                                ? "по фото"
+                                : `${formatRub(item.basePrice)}${
+                                    item.unit ? ` / ${item.unit}` : ""
+                                  }`}
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
                     </div>
                   ))}
-                </dl>
+                </div>
               </div>
             ))}
           </div>
@@ -109,31 +117,28 @@ export default async function HomePage() {
             <div>
               <div className="label text-ink-2">Доплаты</div>
               <ul className="mt-2 grid gap-1.5 text-[14px]">
-                <li className="flex justify-between gap-4">
-                  <span className="text-ink-2">Сильные загрязнения</span>
-                  <span className="tabular font-semibold">
-                    +{rules.soilingPercent}%
-                  </span>
-                </li>
-                <li className="flex justify-between gap-4">
-                  <span className="text-ink-2">Вторая сторона матраса</span>
-                  <span className="tabular font-semibold">
-                    +{rules.secondSidePercent}%
-                  </span>
-                </li>
-                <li className="flex justify-between gap-4">
-                  <span className="text-ink-2">Выезд за город</span>
-                  <span className="tabular font-semibold">
-                    +{formatRub(rules.outOfTownFee)}
-                  </span>
-                </li>
+                {catalog.options.map((option) => (
+                  <li key={option.id} className="flex justify-between gap-4">
+                    <span className="text-ink-2">{option.label}</span>
+                    <span className="tabular whitespace-nowrap font-semibold">
+                      {option.kind === "percent"
+                        ? `+${option.value}%`
+                        : option.kind === "fixed"
+                          ? `+${formatRub(option.value)} / шт`
+                          : `+${formatRub(option.value)} / заказ`}
+                    </span>
+                  </li>
+                ))}
+                {catalog.options.length === 0 ? (
+                  <li className="text-ink-2">Без доплат</li>
+                ) : null}
               </ul>
             </div>
             <div>
               <div className="label text-ink-2">Правила</div>
               <ul className="mt-2 grid gap-1.5 text-[14px]">
                 <li className="flex justify-between gap-4">
-                  <span className="text-ink-2">Минимальный заказ за чистку</span>
+                  <span className="text-ink-2">Минимальный заказ за работы</span>
                   <span className="tabular font-semibold">
                     {formatRub(rules.minOrder)}
                   </span>
@@ -144,8 +149,18 @@ export default async function HomePage() {
                 </li>
                 <li className="flex justify-between gap-4">
                   <span className="text-ink-2">Округление итога</span>
-                  <span className="font-semibold">до 10 ₽ вверх</span>
+                  <span className="font-semibold">
+                    до {rules.roundingStep} ₽ вверх
+                  </span>
                 </li>
+                {rules.outOfTownFee > 0 ? (
+                  <li className="flex justify-between gap-4">
+                    <span className="text-ink-2">Выезд за город</span>
+                    <span className="tabular font-semibold">
+                      +{formatRub(rules.outOfTownFee)}
+                    </span>
+                  </li>
+                ) : null}
               </ul>
             </div>
           </div>
@@ -162,7 +177,7 @@ export default async function HomePage() {
               caption: photo.caption,
               alt:
                 photo.caption.trim() ||
-                `Химчистка мебели, ${company.city}`,
+                `Наши работы, ${company.city}`,
             }))}
           />
         ) : null}
@@ -173,8 +188,8 @@ export default async function HomePage() {
           <div className="mt-6 grid gap-2.5 md:grid-cols-3">
             {[
               {
-                title: "Выбираете мебель",
-                text: "Отмечаете варианты и добавляете фото — по ним мастер увидит состояние ткани.",
+                title: "Выбираете услугу",
+                text: "Отмечаете варианты и добавляете фото — по ним мастер увидит объём работы.",
               },
               {
                 title: "Отправляете заявку",
@@ -196,7 +211,7 @@ export default async function HomePage() {
           </div>
           <div className="mt-6">
             <Link href="#pick" className="btn btn-secondary w-auto px-5">
-              Выбрать мебель
+              Выбрать услугу
               <ChevronRightIcon className="h-4 w-4" />
             </Link>
           </div>

@@ -2,7 +2,11 @@
 
 import { useEffect, useSyncExternalStore } from "react";
 
-import { calculateOrder, type PricingRules } from "@/lib/calc/pricing";
+import {
+  calculateOrder,
+  type PricingOption,
+  type PricingRules,
+} from "@/lib/calc/pricing";
 
 export type CartCategory = string;
 
@@ -13,15 +17,28 @@ export type PhotoMeta = {
   name: string;
 };
 
+export type CartOptionSelection = {
+  id: string;
+  quantity: number;
+};
+
 export type CartItem = {
   uid: string;
   tariffId: string;
   category: CartCategory;
+  serviceId?: string;
+  serviceLabel?: string;
   label: string;
   variantLabel: string;
+  unit: string;
+  parameterLabel: string;
+  parameterValue: number;
+  optionSelections: CartOptionSelection[];
+  /** Легаси-поле: совпадает с parameterValue. */
   quantity: number;
   heavySoiling: boolean;
   secondSide: boolean;
+  isManual: boolean;
   manualDescription: string;
   photos: PhotoMeta[];
 };
@@ -37,6 +54,7 @@ export type CheckoutDraft = {
   comment: string;
   consent: boolean;
   idempotencyKey: string;
+  orderOptionIds: string[];
 };
 
 export type CartState = {
@@ -66,6 +84,7 @@ export function emptyCheckout(): CheckoutDraft {
     comment: "",
     consent: false,
     idempotencyKey: newIdempotencyKey(),
+    orderOptionIds: [],
   };
 }
 
@@ -90,6 +109,32 @@ function persist(): void {
   }
 }
 
+function normalizeItem(item: CartItem): CartItem {
+  const parameterValue = Number.isFinite(item.parameterValue)
+    ? item.parameterValue
+    : Number.isFinite(item.quantity)
+      ? item.quantity
+      : 1;
+
+  return {
+    ...item,
+    serviceId: item.serviceId ?? undefined,
+    serviceLabel: item.serviceLabel ?? item.label,
+    unit: item.unit ?? "шт",
+    parameterLabel: item.parameterLabel ?? "Количество",
+    parameterValue,
+    optionSelections: Array.isArray(item.optionSelections)
+      ? item.optionSelections
+      : [],
+    quantity: parameterValue,
+    heavySoiling: Boolean(item.heavySoiling),
+    secondSide: Boolean(item.secondSide),
+    isManual: Boolean(item.isManual),
+    manualDescription: item.manualDescription ?? "",
+    photos: item.photos ?? [],
+  };
+}
+
 export function hydrateCart(): void {
   if (hydrated || typeof window === "undefined") return;
   hydrated = true;
@@ -101,7 +146,7 @@ export function hydrateCart(): void {
         state = {
           items: parsed.items
             .filter(isValidItem)
-            .map((item) => ({ ...item, photos: item.photos ?? [] })),
+            .map((item) => normalizeItem(item)),
           checkout: { ...emptyCheckout(), ...(parsed.checkout ?? {}) },
         };
       }
@@ -123,7 +168,8 @@ function isValidItem(value: unknown): value is CartItem {
     typeof item.uid === "string" &&
     typeof item.tariffId === "string" &&
     typeof item.label === "string" &&
-    typeof item.quantity === "number"
+    (typeof item.parameterValue === "number" ||
+      typeof item.quantity === "number")
   );
 }
 
@@ -156,23 +202,42 @@ export function useCartHydrated(): boolean {
   );
 }
 
+function optionsKey(selections: CartOptionSelection[]): string {
+  return [...selections]
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map((selection) => `${selection.id}:${selection.quantity}`)
+    .join(",");
+}
+
 export function addItem(input: {
   tariffId: string;
   category: CartCategory;
+  serviceId?: string;
+  serviceLabel?: string;
   label: string;
   variantLabel: string;
+  unit?: string;
+  parameterLabel?: string;
+  parameterValue?: number;
   quantity?: number;
+  optionSelections?: CartOptionSelection[];
   heavySoiling?: boolean;
   secondSide?: boolean;
+  isManual?: boolean;
   manualDescription?: string;
 }): string {
-  const quantity = clampQuantity(input.quantity ?? 1);
+  const parameterValue = Number.isFinite(input.parameterValue)
+    ? (input.parameterValue as number)
+    : clampQuantity(input.quantity ?? 1);
   const manualDescription = (input.manualDescription ?? "").trim();
+  const optionSelections = input.optionSelections ?? [];
   const heavySoiling = Boolean(input.heavySoiling);
   const secondSide = Boolean(input.secondSide);
 
   const existing = findItemByConfig({
     tariffId: input.tariffId,
+    parameterValue,
+    optionSelections,
     heavySoiling,
     secondSide,
     manualDescription,
@@ -185,7 +250,8 @@ export function addItem(input: {
         item.uid === existing.uid
           ? {
               ...item,
-              quantity: clampQuantity(item.quantity + quantity),
+              parameterValue: item.parameterValue + parameterValue,
+              quantity: item.parameterValue + parameterValue,
             }
           : item,
       ),
@@ -208,11 +274,18 @@ export function addItem(input: {
         uid,
         tariffId: input.tariffId,
         category: input.category,
+        serviceId: input.serviceId,
+        serviceLabel: input.serviceLabel,
         label: input.label,
         variantLabel: input.variantLabel,
-        quantity,
+        unit: input.unit ?? "шт",
+        parameterLabel: input.parameterLabel ?? "Количество",
+        parameterValue,
+        optionSelections,
+        quantity: parameterValue,
         heavySoiling,
         secondSide,
+        isManual: Boolean(input.isManual),
         manualDescription,
         photos: [],
       },
@@ -242,19 +315,30 @@ export function restoreItem(item: CartItem): void {
 /** Позиция с такой же конфигурацией — для «добавить фото, не добавляя ещё раз». */
 export function findItemByConfig(input: {
   tariffId: string;
+  parameterValue?: number;
+  optionSelections?: CartOptionSelection[];
   heavySoiling?: boolean;
   secondSide?: boolean;
   manualDescription?: string;
 }): CartItem | null {
   const manualDescription = (input.manualDescription ?? "").trim();
   return (
-    state.items.find(
-      (item) =>
+    state.items.find((item) => {
+      const sameParameter =
+        input.parameterValue === undefined ||
+        item.parameterValue === input.parameterValue;
+      const sameOptions =
+        input.optionSelections === undefined ||
+        optionsKey(item.optionSelections) === optionsKey(input.optionSelections);
+      return (
         item.tariffId === input.tariffId &&
+        sameParameter &&
+        sameOptions &&
         item.heavySoiling === Boolean(input.heavySoiling) &&
         item.secondSide === Boolean(input.secondSide) &&
-        item.manualDescription === manualDescription,
-    ) ?? null
+        item.manualDescription === manualDescription
+      );
+    }) ?? null
   );
 }
 
@@ -262,11 +346,41 @@ export function getItem(uid: string): CartItem | null {
   return state.items.find((item) => item.uid === uid) ?? null;
 }
 
-export function setQuantity(uid: string, quantity: number): void {
+export function setParameterValue(uid: string, value: number): void {
+  const parameterValue = Number.isFinite(value) ? value : 1;
   state = {
     ...state,
     items: state.items.map((item) =>
-      item.uid === uid ? { ...item, quantity: clampQuantity(quantity) } : item,
+      item.uid === uid
+        ? { ...item, parameterValue, quantity: parameterValue }
+        : item,
+    ),
+  };
+  persist();
+  emit();
+}
+
+export function setQuantity(uid: string, quantity: number): void {
+  setParameterValue(uid, clampQuantity(quantity));
+}
+
+export function setOptionSelections(
+  uid: string,
+  selections: CartOptionSelection[],
+): void {
+  state = {
+    ...state,
+    items: state.items.map((item) =>
+      item.uid === uid
+        ? {
+            ...item,
+            optionSelections: selections,
+            heavySoiling: selections.some((selection) => selection.id === "soiling"),
+            secondSide: selections.some(
+              (selection) => selection.id === "second-side",
+            ),
+          }
+        : item,
     ),
   };
   persist();
@@ -335,6 +449,14 @@ export function updateCheckout(patch: Partial<CheckoutDraft>): void {
   emit();
 }
 
+export function setOrderOption(id: string, enabled: boolean): void {
+  const current = state.checkout.orderOptionIds;
+  const next = enabled
+    ? Array.from(new Set([...current, id]))
+    : current.filter((optionId) => optionId !== id);
+  updateCheckout({ orderOptionIds: next });
+}
+
 export function resetCart(): void {
   state = emptyState();
   if (typeof window !== "undefined") {
@@ -356,7 +478,7 @@ export function itemsFingerprint(items: CartItem[]): string {
   return items
     .map(
       (item) =>
-        `${item.tariffId}:${item.quantity}:${item.heavySoiling}:${item.secondSide}:${item.photos.length}:${item.manualDescription}`,
+        `${item.tariffId}:${item.parameterValue}:${optionsKey(item.optionSelections)}:${item.photos.length}:${item.manualDescription}`,
     )
     .join("|");
 }
@@ -364,10 +486,16 @@ export function itemsFingerprint(items: CartItem[]): string {
 export type CartTariff = {
   id: string;
   category: CartCategory;
+  serviceId?: string;
+  serviceLabel?: string;
+  unit?: string;
+  parameterLabel?: string;
+  minValue?: number;
+  maxValue?: number;
+  step?: number;
   basePrice: number | null;
-  allowsSoiling: boolean;
-  allowsSecondSide: boolean;
   isManual: boolean;
+  options?: PricingOption[];
   label: string;
   variantLabel: string;
 };
@@ -377,6 +505,8 @@ export function priceCart(
   tariffs: CartTariff[],
   rules: PricingRules,
   outOfTown: boolean,
+  orderOptions: PricingOption[] = [],
+  orderOptionIds: string[] = [],
 ) {
   return calculateOrder({
     items: items.map((item) => {
@@ -384,17 +514,25 @@ export function priceCart(
       return {
         key: item.uid,
         category: item.category,
-        basePrice: tariff?.basePrice ?? null,
-        quantity: item.quantity,
+        serviceId: tariff?.serviceId ?? item.serviceId,
+        serviceLabel: tariff?.serviceLabel ?? item.serviceLabel,
+        variantId: item.tariffId,
+        variantLabel: item.variantLabel,
+        unit: tariff?.unit ?? item.unit,
+        parameterLabel: tariff?.parameterLabel ?? item.parameterLabel,
+        parameterValue: item.parameterValue,
+        pricePerUnit: tariff?.basePrice ?? 0,
+        manual: tariff?.isManual ?? item.isManual,
+        options: tariff?.options,
+        optionSelections: item.optionSelections,
         heavySoiling: item.heavySoiling,
         secondSide: item.secondSide,
-        manual: tariff?.isManual ?? false,
-        allowsSoiling: tariff?.allowsSoiling ?? true,
-        allowsSecondSide: tariff?.allowsSecondSide ?? false,
       };
     }),
     rules,
     outOfTown,
+    orderOptions,
+    orderOptionIds,
   });
 }
 
@@ -408,7 +546,7 @@ export function photosMissingText(items: CartItem[]): string {
   const missing = items.filter((item) => item.photos.length === 0);
   const names = missing
     .map((item) =>
-      item.category === "other"
+      item.isManual || item.category === "other"
         ? "«Другое»"
         : `${item.label.toLowerCase()} (${item.variantLabel.toLowerCase()})`,
     )

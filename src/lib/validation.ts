@@ -169,6 +169,20 @@ const pricingId = z
 
 export const pricingServiceInputSchema = z.object({
   id: pricingId,
+  label: trimmed(1, 60, "Название категории"),
+  hint: z.string().trim().max(120, "Не длиннее 120 символов").default(""),
+  icon: z
+    .string()
+    .trim()
+    .regex(/^[a-z0-9-]{1,32}$/, "Неизвестная иконка")
+    .default("other"),
+  sortOrder: z.number().int().min(0).max(100_000),
+  isActive: z.boolean(),
+});
+
+export const catalogServiceInputSchema = z.object({
+  id: pricingId,
+  categoryId: pricingId,
   label: trimmed(1, 60, "Название услуги"),
   hint: z.string().trim().max(120, "Не длиннее 120 символов").default(""),
   icon: z
@@ -308,22 +322,31 @@ export const updateTariffsSchema = z
   .object({
     settings: tariffSettingsUpdateSchema,
     services: z.array(pricingServiceInputSchema).max(50).optional(),
+    catalogServices: z.array(catalogServiceInputSchema).max(300).optional(),
     options: z.array(pricingOptionInputSchema).max(100).optional(),
     items: z.array(tariffItemPatchSchema).max(300),
   })
   .superRefine((value, ctx) => {
-    uniqueIds(value.services ?? [], ctx, "services", "Коды услуг повторяются");
+    uniqueIds(value.services ?? [], ctx, "services", "Коды категорий повторяются");
+    uniqueIds(
+      value.catalogServices ?? [],
+      ctx,
+      "catalogServices",
+      "Коды услуг повторяются",
+    );
     uniqueIds(value.options ?? [], ctx, "options", "Коды опций повторяются");
     uniqueIds(value.items, ctx, "items", "Коды вариантов повторяются");
 
     const hasCatalog =
-      value.services !== undefined || value.options !== undefined;
+      value.services !== undefined ||
+      value.options !== undefined ||
+      value.catalogServices !== undefined;
     if (!hasCatalog) {
       value.items.forEach((item, index) => {
         if ("category" in item) {
           ctx.addIssue({
             code: "custom",
-            message: "Для полного сохранения нужны услуги и опции",
+            message: "Для полного сохранения нужны категории, услуги и опции",
             path: ["items", index],
           });
         }
@@ -334,14 +357,27 @@ export const updateTariffsSchema = z
     if (!value.services || !value.options) {
       ctx.addIssue({
         code: "custom",
-        message: "Для полного сохранения нужны услуги и опции",
+        message: "Для полного сохранения нужны категории и опции",
         path: ["services"],
       });
       return;
     }
 
-    const serviceIds = new Set(value.services.map((service) => service.id));
+    const categoryIds = new Set(value.services.map((service) => service.id));
+    const serviceIds = new Set(
+      (value.catalogServices ?? []).map((service) => service.id),
+    );
     const optionIds = new Set(value.options.map((option) => option.id));
+
+    for (const [index, service] of (value.catalogServices ?? []).entries()) {
+      if (!categoryIds.has(service.categoryId)) {
+        ctx.addIssue({
+          code: "custom",
+          message: "У услуги нет категории",
+          path: ["catalogServices", index, "categoryId"],
+        });
+      }
+    }
 
     value.items.forEach((item, index) => {
       if (!("category" in item)) {
@@ -353,11 +389,18 @@ export const updateTariffsSchema = z
         return;
       }
 
-      if (!serviceIds.has(item.category)) {
+      if (!categoryIds.has(item.category)) {
+        ctx.addIssue({
+          code: "custom",
+          message: "У варианта нет категории",
+          path: ["items", index, "category"],
+        });
+      }
+      if (item.serviceId && !serviceIds.has(item.serviceId)) {
         ctx.addIssue({
           code: "custom",
           message: "У варианта нет услуги",
-          path: ["items", index, "category"],
+          path: ["items", index, "serviceId"],
         });
       }
       if (item.isManual && item.basePrice !== null) {

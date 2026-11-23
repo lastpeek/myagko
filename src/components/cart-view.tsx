@@ -12,29 +12,32 @@ import {
   EmptyCartIcon,
   InfoIcon,
   MattressIcon,
-  MinusIcon,
   OtherIcon,
   PlusIcon,
   SofaIcon,
   TrashIcon,
 } from "@/components/icons";
+import { LineOptionsEditor } from "@/components/line-options-editor";
+import { OrderOptionsEditor } from "@/components/order-options-editor";
+import { ParameterInput } from "@/components/parameter-input";
 import { PhotoUploader } from "@/components/photo-uploader";
 import {
-  clampQuantity,
   photosMissingText,
   priceCart,
   removeItem,
   restoreItem,
-  setFlags,
   setManualDescription,
-  setQuantity,
+  setOptionSelections,
+  setParameterValue,
+  updateCheckout,
   useCart,
   useCartHydrated,
   type CartItem,
+  type CartOptionSelection,
 } from "@/lib/cart-store";
 import { formatRub } from "@/lib/format";
 import { deletePhoto, prunePhotos } from "@/lib/photo-store";
-import type { PublicRules, PublicTariff } from "@/lib/ui-types";
+import type { PublicPriceOption, PublicRules, PublicTariff } from "@/lib/ui-types";
 
 const ICON: Record<string, typeof SofaIcon> = {
   sofa: SofaIcon,
@@ -44,16 +47,35 @@ const ICON: Record<string, typeof SofaIcon> = {
   other: OtherIcon,
 };
 
+function legacySelections(
+  item: CartItem,
+  options: PublicPriceOption[],
+): CartOptionSelection[] {
+  const selections: CartOptionSelection[] = [];
+  if (item.heavySoiling && options.some((option) => option.id === "soiling")) {
+    selections.push({ id: "soiling", quantity: 1 });
+  }
+  if (
+    item.secondSide &&
+    options.some((option) => option.id === "second-side")
+  ) {
+    selections.push({ id: "second-side", quantity: 1 });
+  }
+  return selections;
+}
+
 export function CartView({
   tariffs,
   rules,
   maxPhotos,
   otherRequiresPhoto,
+  orderOptions,
 }: {
   tariffs: PublicTariff[];
   rules: PublicRules;
   maxPhotos: number;
   otherRequiresPhoto: boolean;
+  orderOptions: PublicPriceOption[];
 }) {
   const { items, checkout } = useCart();
   const hydrated = useCartHydrated();
@@ -70,11 +92,24 @@ export function CartView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated]);
 
-  const result = priceCart(items, tariffs, rules, checkout.outOfTown);
+  const result = priceCart(
+    items,
+    tariffs,
+    rules,
+    checkout.outOfTown,
+    orderOptions,
+    checkout.orderOptionIds,
+  );
+
+  function isManualItem(item: CartItem): boolean {
+    const tariff = tariffs.find((entry) => entry.id === item.tariffId);
+    if (tariff) return tariff.isManual;
+    return item.isManual || item.category === "other";
+  }
 
   const manualIncomplete = items.filter(
     (item) =>
-      item.category === "other" && item.manualDescription.trim().length < 10,
+      isManualItem(item) && item.manualDescription.trim().length < 10,
   );
 
   function handleRemove(item: CartItem) {
@@ -126,10 +161,10 @@ export function CartView({
           </span>
           <h2 className="h3 mt-4">Пока пусто</h2>
           <p className="small mt-1.5 max-w-[34ch] text-ink-2">
-            Выберите мебель — цена появится сразу.
+            Выберите услугу — цена появится сразу.
           </p>
           <Link href="/#pick" className="btn btn-primary mt-5 w-auto px-6">
-            Выбрать мебель
+            Выбрать услугу
           </Link>
         </div>
       </div>
@@ -143,7 +178,7 @@ export function CartView({
         className="small inline-flex min-h-11 items-center gap-1 text-ink-2 no-underline hover:text-ink"
       >
         <ChevronLeftIcon className="h-4 w-4" />
-        Что ещё почистить
+        Что ещё добавить
       </Link>
 
       <div className="mt-2 flex items-baseline justify-between gap-3">
@@ -158,10 +193,24 @@ export function CartView({
           const tariff = tariffs.find((entry) => entry.id === item.tariffId);
           const line = result.lines.find((entry) => entry.key === item.uid);
           const Icon = ICON[item.category] ?? OtherIcon;
-          const flags: string[] = [];
-          if (item.heavySoiling) flags.push("сильные загрязнения");
-          if (item.secondSide) flags.push("две стороны");
-          if (item.category === "other") flags.push("цена по фото");
+          const manual = isManualItem(item);
+          const selections =
+            item.optionSelections.length > 0
+              ? item.optionSelections
+              : legacySelections(item, tariff?.options ?? []);
+          const flags = line?.options?.length
+            ? line.options.map((option) =>
+                option.quantity && option.quantity > 1
+                  ? `${option.label} × ${option.quantity}`
+                  : option.label,
+              )
+            : [];
+          const lineOptions =
+            tariff?.options.filter((option) => option.kind !== "fixed_order") ??
+            [];
+          const requiresPhoto =
+            Boolean(tariff?.requiresPhoto) ||
+            (manual && otherRequiresPhoto);
 
           return (
             <article key={item.uid} className="card p-4 md:p-5">
@@ -175,26 +224,28 @@ export function CartView({
                     {item.label} · {item.variantLabel}
                   </h2>
                   <p className="mt-0.5 text-[12.5px] leading-4 text-ink-3">
-                    {flags.length > 0
-                      ? flags.join(", ")
-                      : "Без доплат"}
+                    {manual
+                      ? "цена по фото"
+                      : flags.length > 0
+                        ? flags.join(", ")
+                        : "Без доплат"}
                   </p>
                 </div>
 
                 <div className="tabular whitespace-nowrap text-right text-[15px] font-semibold">
-                  {line?.manual || item.category === "other"
+                  {manual || line?.manual
                     ? "По фото"
                     : formatRub(line?.lineTotal ?? null)}
                 </div>
               </div>
 
-              {item.category === "other" ? (
+              {manual ? (
                 <div className="mt-3">
                   <label
                     htmlFor={`desc-${item.uid}`}
                     className="label block text-ink-2"
                   >
-                    Что почистить
+                    Что оценить
                   </label>
                   <textarea
                     id={`desc-${item.uid}`}
@@ -224,85 +275,38 @@ export function CartView({
                     Минимум 10 символов — иначе мастер не поймёт, что оценивать.
                   </p>
                 </div>
+              ) : tariff ? (
+                <div className="mt-3">
+                  <ParameterInput
+                    id={`param-${item.uid}`}
+                    label={tariff.parameterLabel}
+                    unit={tariff.unit}
+                    value={item.parameterValue}
+                    min={tariff.minValue}
+                    max={tariff.maxValue}
+                    step={tariff.step}
+                    onChange={(value) => setParameterValue(item.uid, value)}
+                  />
+                </div>
+              ) : null}
+
+              {!manual && lineOptions.length > 0 ? (
+                <div className="mt-3 border-t border-line pt-3">
+                  <div className="label mb-2 text-ink-2">Доплаты</div>
+                  <LineOptionsEditor
+                    options={tariff?.options ?? []}
+                    selections={selections}
+                    onChange={(next) => setOptionSelections(item.uid, next)}
+                  />
+                </div>
               ) : null}
 
               <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-                <div className="inline-flex items-center rounded-[12px] border border-line">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setQuantity(item.uid, clampQuantity(item.quantity - 1))
-                    }
-                    disabled={item.quantity <= 1}
-                    aria-label="Уменьшить количество"
-                    className="grid h-11 w-11 place-items-center text-ink-2 disabled:opacity-40"
-                  >
-                    <MinusIcon className="h-4 w-4" />
-                  </button>
-                  <span
-                    className="tabular min-w-6 text-center text-[13.5px] font-semibold"
-                    aria-live="polite"
-                  >
-                    {item.quantity}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setQuantity(item.uid, clampQuantity(item.quantity + 1))
-                    }
-                    disabled={item.quantity >= 10}
-                    aria-label="Увеличить количество"
-                    className="grid h-11 w-11 place-items-center text-ink-2 disabled:opacity-40"
-                  >
-                    <PlusIcon className="h-4 w-4" />
-                  </button>
-                </div>
-
-                {tariff?.allowsSoiling ? (
-                  <button
-                    type="button"
-                    aria-pressed={item.heavySoiling}
-                    onClick={() =>
-                      setFlags(item.uid, { heavySoiling: !item.heavySoiling })
-                    }
-                    className={`min-h-11 rounded-[10px] border px-3 text-[12.5px] font-medium transition-colors duration-[160ms] ${
-                      item.heavySoiling
-                        ? "border-accent bg-accent-soft text-accent-ink"
-                        : "border-line text-ink-2 hover:border-line-strong"
-                    }`}
-                  >
-                    Сильные загрязнения
-                    <span className="tabular ml-1 opacity-70">
-                      +{rules.soilingPercent}%
-                    </span>
-                  </button>
-                ) : null}
-
-                {tariff?.allowsSecondSide ? (
-                  <button
-                    type="button"
-                    aria-pressed={item.secondSide}
-                    onClick={() =>
-                      setFlags(item.uid, { secondSide: !item.secondSide })
-                    }
-                    className={`min-h-11 rounded-[10px] border px-3 text-[12.5px] font-medium transition-colors duration-[160ms] ${
-                      item.secondSide
-                        ? "border-accent bg-accent-soft text-accent-ink"
-                        : "border-line text-ink-2 hover:border-line-strong"
-                    }`}
-                  >
-                    Вторая сторона
-                    <span className="tabular ml-1 opacity-70">
-                      +{rules.secondSidePercent}%
-                    </span>
-                  </button>
-                ) : null}
-
                 <button
                   type="button"
                   onClick={() => handleRemove(item)}
                   aria-label={`Удалить: ${item.label} ${item.variantLabel}`}
-                  className="ml-auto grid h-11 w-11 place-items-center rounded-[10px] text-ink-3 transition-colors hover:bg-surface-2 hover:text-danger"
+                  className="grid h-11 w-11 place-items-center rounded-[10px] text-ink-3 transition-colors hover:bg-surface-2 hover:text-danger"
                 >
                   <TrashIcon className="h-5 w-5" />
                 </button>
@@ -311,9 +315,7 @@ export function CartView({
               <div className="mt-3 border-t border-line pt-3">
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <span className="label text-ink-2">
-                    {item.category === "other" && otherRequiresPhoto
-                      ? "Фото обязательно"
-                      : "Фото — по желанию"}
+                    {requiresPhoto ? "Фото обязательно" : "Фото — по желанию"}
                   </span>
                   <span className="caption tabular">
                     {item.photos.length} / {maxPhotos}
@@ -323,7 +325,7 @@ export function CartView({
                   itemUid={item.uid}
                   photos={item.photos}
                   max={maxPhotos}
-                  required={item.category === "other" && otherRequiresPhoto}
+                  required={requiresPhoto}
                   compact
                 />
               </div>
@@ -340,9 +342,15 @@ export function CartView({
         Добавить предмет
       </Link>
 
+      <OrderOptionsEditor
+        options={orderOptions}
+        selectedIds={checkout.orderOptionIds}
+        onChange={(orderOptionIds) => updateCheckout({ orderOptionIds })}
+      />
+
       <section className="card mt-4 p-4 md:p-5" aria-label="Сумма">
         <div className="flex items-baseline justify-between gap-3 py-1 text-[13.5px] text-ink-2">
-          <span>Чистка</span>
+          <span>Работы</span>
           <span className="tabular">{formatRub(result.itemsSubtotal)}</span>
         </div>
 
@@ -351,6 +359,15 @@ export function CartView({
             <span>До минимального заказа</span>
             <span className="tabular">
               +{formatRub(result.minimumAdjustment)}
+            </span>
+          </div>
+        ) : null}
+
+        {result.orderOptionsTotal > 0 ? (
+          <div className="flex items-baseline justify-between gap-3 py-1 text-[13.5px] text-ink-2">
+            <span>Дополнительно к заказу</span>
+            <span className="tabular">
+              +{formatRub(result.orderOptionsTotal)}
             </span>
           </div>
         ) : null}
@@ -366,6 +383,15 @@ export function CartView({
             <span>бесплатно</span>
           </div>
         )}
+
+        {result.roundingAdjustment > 0 ? (
+          <div className="flex items-baseline justify-between gap-3 py-1 text-[13.5px] text-ink-2">
+            <span>Округление</span>
+            <span className="tabular">
+              +{formatRub(result.roundingAdjustment)}
+            </span>
+          </div>
+        ) : null}
 
         <div className="mt-2 flex items-baseline justify-between gap-3 border-t border-line pt-3">
           <span className="text-[15px] font-semibold">Итого</span>
@@ -388,7 +414,7 @@ export function CartView({
             <span>
               {result.minimumAdjustment > 0
                 ? `Минимальный заказ ${formatRub(rules.minOrder)} — добавлено ${formatRub(result.minimumAdjustment)}`
-                : `Минимальный заказ ${formatRub(rules.minOrder)} за чистку — выполнен. Выезд считается отдельно.`}
+                : `Минимальный заказ ${formatRub(rules.minOrder)} за работы — выполнен. Выезд считается отдельно.`}
             </span>
           </div>
         ) : null}
@@ -401,8 +427,8 @@ export function CartView({
 
       {manualIncomplete.length > 0 ? (
         <p className="small mt-3 text-warn" role="status">
-          У «Другого» нужно описание — заполните в карточке. Фото можно добавить
-          на оформлении.
+          Для позиций «По фото» нужно описание — заполните в карточке. Фото
+          можно добавить на оформлении.
         </p>
       ) : null}
 

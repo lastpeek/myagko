@@ -32,7 +32,10 @@ export async function applyTariffsUpdate(
   input: UpdateTariffsInput,
   now: Date = new Date(),
 ): Promise<void> {
-  const full = input.services !== undefined && input.options !== undefined;
+  const full =
+    input.services !== undefined ||
+    input.options !== undefined ||
+    input.catalogServices !== undefined;
 
   if (!full) {
     await applyLegacyUpdate(db, input, now);
@@ -108,6 +111,7 @@ async function applyFullUpdate(
   now: Date,
 ): Promise<void> {
   const serviceRows = input.services ?? [];
+  const catalogServiceRows = input.catalogServices ?? [];
   const optionRows = input.options ?? [];
 
   await db.transaction(async (tx) => {
@@ -142,6 +146,33 @@ async function applyFullUpdate(
         .onConflictDoUpdate({
           target: services.id,
           set: {
+            label: service.label,
+            hint: service.hint,
+            icon: service.icon,
+            sortOrder: service.sortOrder,
+            isActive: service.isActive,
+            updatedAt: now,
+          },
+        });
+    }
+
+    for (const service of catalogServiceRows) {
+      await tx
+        .insert(catalogServices)
+        .values({
+          id: service.id,
+          categoryId: service.categoryId,
+          label: service.label,
+          hint: service.hint,
+          icon: service.icon,
+          sortOrder: service.sortOrder,
+          isActive: service.isActive,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: catalogServices.id,
+          set: {
+            categoryId: service.categoryId,
             label: service.label,
             hint: service.hint,
             icon: service.icon,

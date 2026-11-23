@@ -13,6 +13,7 @@ import {
   SpinnerIcon,
 } from "@/components/icons";
 import { CheckoutPhotoTiles } from "@/components/checkout-photo-tiles";
+import { OrderOptionsEditor } from "@/components/order-options-editor";
 import {
   photosMissingText,
   priceCart,
@@ -21,9 +22,13 @@ import {
   useCart,
   useCartHydrated,
 } from "@/lib/cart-store";
-import { formatRub } from "@/lib/format";
+import { formatDecimal, formatRub } from "@/lib/format";
 import { clearPhotos, getPhoto } from "@/lib/photo-store";
-import type { PublicRules, PublicTariff } from "@/lib/ui-types";
+import type {
+  PublicPriceOption,
+  PublicRules,
+  PublicTariff,
+} from "@/lib/ui-types";
 
 type FieldErrors = Record<string, string>;
 
@@ -32,11 +37,15 @@ export function CheckoutForm({
   rules,
   territory,
   maxPhotos,
+  otherRequiresPhoto,
+  orderOptions,
 }: {
   tariffs: PublicTariff[];
   rules: PublicRules;
   territory: string;
   maxPhotos: number;
+  otherRequiresPhoto: boolean;
+  orderOptions: PublicPriceOption[];
 }) {
   const { items, checkout } = useCart();
   const hydrated = useCartHydrated();
@@ -46,7 +55,20 @@ export function CheckoutForm({
   const [banner, setBanner] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const result = priceCart(items, tariffs, rules, checkout.outOfTown);
+  const result = priceCart(
+    items,
+    tariffs,
+    rules,
+    checkout.outOfTown,
+    orderOptions,
+    checkout.orderOptionIds,
+  );
+
+  function isManualItem(item: (typeof items)[number]): boolean {
+    const tariff = tariffs.find((entry) => entry.id === item.tariffId);
+    if (tariff) return tariff.isManual;
+    return item.isManual || item.category === "other";
+  }
 
   const today = useMemo(() => {
     const now = new Date();
@@ -88,8 +110,8 @@ export function CheckoutForm({
     if (!checkout.consent) nextErrors.consent = "Нужно согласие на обработку данных";
 
     for (const item of items) {
-      if (item.category === "other" && item.manualDescription.trim().length < 10) {
-        nextErrors.items = "Опишите «Другое» — минимум 10 символов";
+      if (isManualItem(item) && item.manualDescription.trim().length < 10) {
+        nextErrors.items = "Опишите позицию «По фото» — минимум 10 символов";
       }
     }
 
@@ -106,11 +128,13 @@ export function CheckoutForm({
       const payload = {
         items: items.map((item) => ({
           tariffId: item.tariffId,
-          quantity: item.quantity,
+          parameterValue: item.parameterValue,
+          optionSelections: item.optionSelections,
           heavySoiling: item.heavySoiling,
           secondSide: item.secondSide,
-          manualDescription:
-            item.category === "other" ? item.manualDescription.trim() : undefined,
+          manualDescription: isManualItem(item)
+            ? item.manualDescription.trim()
+            : undefined,
         })),
         customer: {
           name: checkout.name.trim(),
@@ -123,6 +147,7 @@ export function CheckoutForm({
           comment: checkout.comment.trim() || undefined,
         },
         consent: true,
+        orderOptionIds: checkout.orderOptionIds,
         idempotencyKey: checkout.idempotencyKey,
       };
 
@@ -183,9 +208,13 @@ export function CheckoutForm({
     );
   }
 
-  const manualHasPhotoIssue = items.some(
-    (item) => item.category === "other" && item.photos.length === 0,
-  );
+  const manualHasPhotoIssue = items.some((item) => {
+    const tariff = tariffs.find((entry) => entry.id === item.tariffId);
+    const requiresPhoto =
+      Boolean(tariff?.requiresPhoto) ||
+      (isManualItem(item) && otherRequiresPhoto);
+    return isManualItem(item) && requiresPhoto && item.photos.length === 0;
+  });
 
   return (
     <div className="mx-auto w-full max-w-[720px] px-5 pb-36 pt-2 md:px-8 md:pb-40">
@@ -401,20 +430,36 @@ export function CheckoutForm({
           <ul className="mt-3 grid gap-4">
             {items.map((item) => {
               const line = result.lines.find((entry) => entry.key === item.uid);
+              const manual = isManualItem(item);
+              const tariff = tariffs.find((entry) => entry.id === item.tariffId);
+              const applied = line?.options?.map((option) =>
+                option.quantity && option.quantity > 1
+                  ? `${option.label} × ${option.quantity}`
+                  : option.label,
+              );
               return (
                 <li key={item.uid} className="grid gap-2">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-[14px] font-semibold leading-5">
                         {item.label} · {item.variantLabel}
-                        {item.quantity > 1 ? ` × ${item.quantity}` : ""}
                       </div>
-                      {item.category === "other" ? (
+                      {!manual ? (
+                        <div className="caption mt-0.5">
+                          {tariff?.parameterLabel ?? item.parameterLabel}:{" "}
+                          {formatDecimal(item.parameterValue)}{" "}
+                          {tariff?.unit ?? item.unit}
+                        </div>
+                      ) : (
                         <div className="caption mt-1 line-clamp-2">
                           {item.manualDescription || "Описание не заполнено"}
                         </div>
-                      ) : null}
-                      {item.heavySoiling || item.secondSide ? (
+                      )}
+                      {applied && applied.length > 0 ? (
+                        <div className="caption mt-0.5">
+                          {applied.join(", ")}
+                        </div>
+                      ) : item.heavySoiling || item.secondSide ? (
                         <div className="caption mt-0.5">
                           {[
                             item.heavySoiling ? "сильные загрязнения" : "",
@@ -429,7 +474,7 @@ export function CheckoutForm({
                       </div>
                     </div>
                     <div className="tabular whitespace-nowrap text-[14px] font-semibold">
-                      {item.category === "other"
+                      {manual
                         ? "По фото"
                         : formatRub(line?.lineTotal ?? null)}
                     </div>
@@ -448,7 +493,7 @@ export function CheckoutForm({
 
           <div className="mt-4 border-t border-line pt-3">
             <div className="flex items-baseline justify-between gap-3 text-[13.5px] text-ink-2">
-              <span>Чистка</span>
+              <span>Работы</span>
               <span className="tabular">{formatRub(result.itemsSubtotal)}</span>
             </div>
             {result.minimumAdjustment > 0 ? (
@@ -459,10 +504,26 @@ export function CheckoutForm({
                 </span>
               </div>
             ) : null}
+            {result.orderOptionsTotal > 0 ? (
+              <div className="mt-1 flex items-baseline justify-between gap-3 text-[13.5px] text-ink-2">
+                <span>Дополнительно к заказу</span>
+                <span className="tabular">
+                  +{formatRub(result.orderOptionsTotal)}
+                </span>
+              </div>
+            ) : null}
             {result.outOfTownFee > 0 ? (
               <div className="mt-1 flex items-baseline justify-between gap-3 text-[13.5px] text-ink-2">
                 <span>Выезд за город</span>
                 <span className="tabular">+{formatRub(result.outOfTownFee)}</span>
+              </div>
+            ) : null}
+            {result.roundingAdjustment > 0 ? (
+              <div className="mt-1 flex items-baseline justify-between gap-3 text-[13.5px] text-ink-2">
+                <span>Округление</span>
+                <span className="tabular">
+                  +{formatRub(result.roundingAdjustment)}
+                </span>
               </div>
             ) : null}
             <div className="mt-2 flex items-baseline justify-between gap-3 border-t border-line pt-2">
@@ -480,8 +541,8 @@ export function CheckoutForm({
 
           {manualHasPhotoIssue ? (
             <p className="small mt-2 text-warn">
-              У «Другого» нет фото — добавьте его в плитке позиции, иначе
-              заявка не уйдёт.
+              У позиции «По фото» нет фото — добавьте его в плитке позиции,
+              иначе заявка не уйдёт.
             </p>
           ) : null}
 
@@ -491,6 +552,14 @@ export function CheckoutForm({
             {maxPhotos} на позицию
           </p>
         </section>
+
+        <OrderOptionsEditor
+          options={orderOptions}
+          selectedIds={checkout.orderOptionIds}
+          onChange={(orderOptionIds) =>
+            updateCheckout({ orderOptionIds })
+          }
+        />
 
         <div>
           <label className="flex cursor-pointer items-start gap-2.5 py-1">

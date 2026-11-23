@@ -2,14 +2,36 @@ const numberFormatter = new Intl.NumberFormat("ru-RU", {
   maximumFractionDigits: 0,
 });
 
-/** 3200 → "3 200 ₽" (неразрывные пробелы). */
+const moneyFormatter = new Intl.NumberFormat("ru-RU", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+/** 3200 → "3 200 ₽"; 3187.5 → "3 187,50 ₽". */
 export function formatRub(value: number | null | undefined): string {
   if (value === null || value === undefined) return "По фото";
-  return `${numberFormatter.format(value).replace(/\u202f/g, "\u00a0")}\u00a0₽`;
+
+  const hundredths = Math.round(value * 100);
+  if (hundredths % 100 === 0) {
+    return `${numberFormatter.format(hundredths / 100).replace(/\u202f/g, "\u00a0")}\u00a0₽`;
+  }
+
+  return `${moneyFormatter
+    .format(hundredths / 100)
+    .replace(/\u202f/g, "\u00a0")}\u00a0₽`;
 }
 
 export function formatNumber(value: number): string {
   return numberFormatter.format(value).replace(/\u202f/g, "\u00a0");
+}
+
+/** 20.5 → "20,5"; 20 → "20"; 20.05 → "20,05". */
+export function formatDecimal(value: number): string {
+  const rounded = Math.round(value * 100) / 100;
+  const [integer, fraction = "00"] = rounded.toFixed(2).split(".");
+  const int = numberFormatter.format(Number(integer)).replace(/\u202f/g, "\u00a0");
+  if (fraction === "00") return int;
+  return `${int},${fraction.replace(/0$/, "")}`;
 }
 
 const dateFormatter = new Intl.DateTimeFormat("ru-RU", {

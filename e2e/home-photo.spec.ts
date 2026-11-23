@@ -116,7 +116,7 @@ test("фото с главной: добавление, повтор без ду
   // 360: вторичная кнопка — квадрат 54×54 без текста, без переполнения
   await page.setViewportSize({ width: 360, height: 800 });
   await page.goto("/");
-  await page.getByRole("button", { name: /^Кресло/ }).click();
+  await page.getByRole("button", { name: /^Кресл/ }).click();
 
   const square = page.getByRole("button", { name: "Добавить фото" });
   await expect(square).toBeVisible();

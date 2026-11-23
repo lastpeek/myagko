@@ -43,7 +43,9 @@ test("подписи стула, кресла и матраса совпадаю
   await expect(page.getByRole("heading", { name: "Заявки", level: 1 })).toBeVisible();
 
   await page.goto("/admin/tariffs");
-  await expect(page.getByRole("heading", { name: "Тарифы", level: 1 })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Услуги и цены", level: 1 }),
+  ).toBeVisible();
 
   await expect(page.getByLabel("Цена: Стул Только сиденье")).toHaveValue("500");
   await expect(page.getByLabel("Цена: Стул Сиденье и спинка")).toHaveValue("700");

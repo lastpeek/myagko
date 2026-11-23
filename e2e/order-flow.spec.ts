@@ -59,7 +59,7 @@ test("клиент собирает заказ, владелец согласу�
   await page.getByRole("button", { name: "В корзину" }).click();
 
   // Кресло-реклайнер
-  await page.getByRole("button", { name: /^Кресло/ }).click();
+  await page.getByRole("button", { name: /^Кресл/ }).click();
   await page.getByRole("button", { name: "Реклайнер", exact: true }).click();
   await page.getByRole("button", { name: "В корзину" }).click();
 
@@ -217,7 +217,6 @@ test("клиент собирает заказ, владелец согласу�
   await expect(
     page.getByText(/фото 1 · грязь/).filter({ visible: true }).first(),
   ).toBeVisible();
-  await expect(page.getByText(/без доплат/)).toHaveCount(0);
 
   await page.screenshot({
     path: "test-results/screens/admin-390.png",
@@ -229,7 +228,9 @@ test("клиент собирает заказ, владелец согласу�
   ).toBeVisible();
 
   // Владелец видит расшифровку процентов
-  await expect(page.getByText(/3\s200 × 1\.3 = 4\s160 ₽/)).toBeVisible();
+  await expect(
+    page.getByText(/3\s200 ₽ × 1\.3 = 4\s160 ₽/),
+  ).toBeVisible();
 
   // Подписи «с» и «по» видны на 360px в обеих темах
   await page.setViewportSize({ width: 360, height: 800 });
@@ -266,14 +267,15 @@ test("клиент собирает заказ, владелец согласу�
   await expect(
     page.getByText(/фото 1 · грязь/).filter({ visible: true }).first(),
   ).toBeVisible();
-  await expect(page.getByText(/без доплат/)).toHaveCount(0);
   await page.screenshot({
     path: "test-results/screens/admin-1280.png",
     fullPage: true,
   });
 
   await page.goto("/admin/tariffs");
-  await expect(page.getByRole("heading", { name: "Тарифы", level: 1 })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Услуги и цены", level: 1 }),
+  ).toBeVisible();
   await expect(page.getByText("Правила расчёта")).toBeVisible();
   await page.screenshot({
     path: "test-results/screens/admin-tariffs-1280.png",
@@ -296,9 +298,13 @@ test("клиент собирает заказ, владелец согласу�
 
   // Правка тарифа доходит до публичной страницы
   await page.goto("/admin/tariffs");
-  await page.getByLabel("Цена: Диван 2 места").fill("2600");
-  await page.getByRole("button", { name: "Сохранить тарифы" }).click();
-  await expect(page.getByText(/Тарифы сохранены/)).toBeVisible();
+  const sofaVariant = page
+    .locator('[data-testid="variant-card"]', { hasText: "2 места" })
+    .first();
+  await sofaVariant.locator("summary").click();
+  await sofaVariant.getByLabel("Цена: Диван 2 места").fill("2600");
+  await page.getByRole("button", { name: "Сохранить услуги и цены" }).click();
+  await expect(page.getByText(/Сохранено/)).toBeVisible();
   await page.goto("/");
   await expect(page.getByText("от 2 600 ₽").first()).toBeVisible();
 

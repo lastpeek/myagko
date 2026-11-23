@@ -14,14 +14,24 @@ import {
   OtherIcon,
   SofaIcon,
 } from "@/components/icons";
-import { addItem, findItemByConfig, useCart } from "@/lib/cart-store";
-import { formatRub } from "@/lib/format";
+import { LineOptionsEditor } from "@/components/line-options-editor";
+import { ParameterInput } from "@/components/parameter-input";
+import {
+  addItem,
+  findItemByConfig,
+  type CartOptionSelection,
+} from "@/lib/cart-store";
+import { calculateOrder } from "@/lib/calc/pricing";
+import { formatDecimal, formatRub } from "@/lib/format";
 import { addFilesToItem } from "@/lib/photo-upload";
-import type { PublicTariff } from "@/lib/ui-types";
+import type {
+  PublicCatalogService,
+  PublicRules,
+  PublicService,
+  PublicTariff,
+} from "@/lib/ui-types";
 
-const CATEGORY_ORDER = ["sofa", "armchair", "mattress", "chair", "other"] as const;
-
-const CATEGORY_ICON = {
+const ICONS: Record<string, typeof SofaIcon> = {
   sofa: SofaIcon,
   armchair: ArmchairIcon,
   mattress: MattressIcon,
@@ -29,84 +39,153 @@ const CATEGORY_ICON = {
   other: OtherIcon,
 };
 
-const CATEGORY_HINT = {
-  sofa: "2, 3 места, угловой",
-  armchair: "Обычное или с откидной спинкой",
-  mattress: "С одной или двумя сторонами",
-  chair: "Только сиденье или весь стул",
-  other: "Опишите и приложите фото",
+type CategoryNode = PublicService & {
+  services: Array<PublicCatalogService & { variants: PublicTariff[] }>;
 };
 
 export function Configurator({
+  categories,
+  catalogServices,
   tariffs,
+  rules,
   heroTitle,
   heroSubtitle,
-  minOrder,
   maxPhotos,
 }: {
+  categories: PublicService[];
+  catalogServices: PublicCatalogService[];
   tariffs: PublicTariff[];
+  rules: PublicRules;
   heroTitle: string;
   heroSubtitle: string;
-  minOrder: number;
   maxPhotos: number;
 }) {
-  const categories = useMemo(
+  const tree = useMemo<CategoryNode[]>(
     () =>
-      CATEGORY_ORDER.map((category) => {
-        const variants = tariffs.filter((item) => item.category === category);
-        return { category, variants };
-      }).filter((entry) => entry.variants.length > 0),
-    [tariffs],
+      categories
+        .map((category) => ({
+          ...category,
+          services: catalogServices
+            .filter((service) => service.categoryId === category.id)
+            .map((service) => ({
+              ...service,
+              variants: tariffs.filter(
+                (tariff) => tariff.serviceId === service.id,
+              ),
+            }))
+            .filter((service) => service.variants.length > 0),
+        }))
+        .filter((category) => category.services.length > 0),
+    [categories, catalogServices, tariffs],
   );
 
-  const [selectedCategory, setSelectedCategory] = useState<string>(
-    categories[0]?.category ?? "sofa",
+  const firstVariant = tree[0]?.services[0]?.variants[0] ?? null;
+  const [selectedCategoryId, setSelectedCategoryId] = useState(
+    tree[0]?.id ?? "",
   );
-  const [selectedId, setSelectedId] = useState<string>(
-    categories[0]?.variants[0]?.id ?? "",
+  const [selectedVariantId, setSelectedVariantId] = useState(
+    firstVariant?.id ?? "",
   );
+  const [parameterValue, setParameterValue] = useState(
+    firstVariant?.minValue ?? 1,
+  );
+  const [optionSelections, setOptionSelections] = useState<
+    CartOptionSelection[]
+  >([]);
   const [added, setAdded] = useState<{ id: number; label: string } | null>(null);
   const sequence = useRef(0);
 
-  const { items } = useCart();
   const photoInputRef = useRef<HTMLInputElement>(null);
   const photoTargetRef = useRef<string | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
 
-  const selected = tariffs.find((item) => item.id === selectedId) ?? null;
+  const selectedCategory = tree.find(
+    (category) => category.id === selectedCategoryId,
+  );
+  const selected =
+    tariffs.find((tariff) => tariff.id === selectedVariantId) ??
+    selectedCategory?.services[0]?.variants[0] ??
+    null;
+
+  function selectVariant(id: string) {
+    const variant = tariffs.find((tariff) => tariff.id === id);
+    setSelectedVariantId(id);
+    setParameterValue(variant?.minValue ?? 1);
+    setOptionSelections([]);
+  }
+
+  const preview = useMemo(() => {
+    if (!selected) return null;
+    return calculateOrder({
+      items: [
+        {
+          key: selected.id,
+          category: selected.category,
+          serviceId: selected.serviceId,
+          serviceLabel: selected.serviceLabel,
+          variantId: selected.id,
+          variantLabel: selected.variantLabel,
+          unit: selected.unit,
+          parameterLabel: selected.parameterLabel,
+          parameterValue,
+          pricePerUnit: selected.basePrice ?? 0,
+          manual: selected.isManual,
+          options: selected.options,
+          optionSelections,
+        },
+      ],
+      rules,
+      outOfTown: false,
+    });
+  }, [selected, parameterValue, optionSelections, rules]);
 
   const selectedCartItem = selected
-    ? (items.find(
-        (item) =>
-          item.tariffId === selected.id &&
-          !item.heavySoiling &&
-          !item.secondSide &&
-          item.manualDescription === "",
-      ) ?? null)
+    ? findItemByConfig({
+        tariffId: selected.id,
+        parameterValue,
+        optionSelections,
+        manualDescription: "",
+      })
     : null;
 
   const photoCount = selectedCartItem?.photos.length ?? 0;
-  const showPhotoAction = Boolean(selected && selected.category !== "other");
+  const showPhotoAction = Boolean(selected && !selected.isManual);
   const canAddMorePhotos = photoCount < maxPhotos;
 
-  function pickCategory(category: string) {
-    const group = categories.find((entry) => entry.category === category);
-    setSelectedCategory(category);
-    if (group?.variants[0] && !group.variants.some((v) => v.id === selectedId)) {
-      setSelectedId(group.variants[0].id);
-    }
+  const priceLabel = selected
+    ? selected.isManual
+      ? "По фото"
+      : formatRub(preview?.total ?? null)
+    : "";
+
+  function pickCategory(categoryId: string) {
+    const category = tree.find((entry) => entry.id === categoryId);
+    const variant = category?.services[0]?.variants[0];
+    setSelectedCategoryId(categoryId);
+    if (variant) selectVariant(variant.id);
+  }
+
+  function cartInput() {
+    if (!selected) return null;
+    return {
+      tariffId: selected.id,
+      category: selected.category,
+      serviceId: selected.serviceId,
+      serviceLabel: selected.serviceLabel,
+      label: selected.label,
+      variantLabel: selected.variantLabel,
+      unit: selected.unit,
+      parameterLabel: selected.parameterLabel,
+      parameterValue,
+      optionSelections,
+      isManual: selected.isManual,
+    };
   }
 
   function addSelectedToCart(): string | null {
-    if (!selected) return null;
-    return addItem({
-      tariffId: selected.id,
-      category: selected.category,
-      label: selected.label,
-      variantLabel: selected.variantLabel,
-      quantity: 1,
-    });
+    const input = cartInput();
+    return input ? addItem(input) : null;
   }
 
   function addToCart() {
@@ -121,10 +200,15 @@ export function Configurator({
   }
 
   function startPhoto() {
-    if (!selected || selected.category === "other") return;
+    if (!selected || selected.isManual) return;
 
     setPhotoError(null);
-    const existing = findItemByConfig({ tariffId: selected.id });
+    const existing = findItemByConfig({
+      tariffId: selected.id,
+      parameterValue,
+      optionSelections,
+      manualDescription: "",
+    });
     const uid = existing?.uid ?? addSelectedToCart();
     if (!uid) return;
 
@@ -149,16 +233,10 @@ export function Configurator({
     if (photoInputRef.current) photoInputRef.current.value = "";
   }
 
-  const priceLabel = selected
-    ? selected.isManual
-      ? "По фото"
-      : formatRub(selected.basePrice)
-    : "";
-
   return (
     <section className="relative" aria-labelledby="configurator-title">
       <div className="mx-auto w-full max-w-[1120px] px-5 md:px-8 lg:px-10">
-        <h1 id="configurator-title" className="display max-w-[16ch]">
+        <h1 id="configurator-title" className="display max-w-[24ch]">
           {heroTitle}
         </h1>
         <p className="body mt-2 max-w-[46ch] text-ink-2">{heroSubtitle}</p>
@@ -166,21 +244,23 @@ export function Configurator({
         <div className="mt-6 grid gap-10 lg:grid-cols-[minmax(0,560px)_minmax(0,1fr)]">
           <div>
             <div className="grid gap-2.5">
-              {categories.map(({ category, variants }) => {
-                const active = selectedCategory === category;
-                const Icon = CATEGORY_ICON[category];
+              {tree.map((category) => {
+                const active = selectedCategoryId === category.id;
+                const Icon = ICONS[category.icon] ?? OtherIcon;
+                const variants = category.services.flatMap(
+                  (service) => service.variants,
+                );
                 const prices = variants
                   .map((variant) => variant.basePrice)
                   .filter((price): price is number => price !== null);
                 const from = prices.length ? Math.min(...prices) : null;
                 const manual = variants.every((variant) => variant.isManual);
-                const label = variants[0]?.label ?? "";
 
                 return (
-                  <div key={category}>
+                  <div key={category.id}>
                     <button
                       type="button"
-                      onClick={() => pickCategory(category)}
+                      onClick={() => pickCategory(category.id)}
                       aria-pressed={active}
                       className={`grid w-full grid-cols-[46px_minmax(0,1fr)_auto_16px] items-center gap-x-3 gap-y-0.5 rounded-[20px] border p-4 text-left transition-[border-color,background-color] duration-[180ms] ${
                         active
@@ -196,7 +276,7 @@ export function Configurator({
                         <Icon className="h-6 w-6 text-ink" />
                       </span>
                       <span className="min-w-0 truncate text-[15px] font-semibold leading-6 tracking-[-0.01em]">
-                        {label}
+                        {category.label}
                       </span>
                       <span className="tabular col-start-3 justify-self-end whitespace-nowrap text-[14px] font-semibold">
                         {manual
@@ -207,37 +287,105 @@ export function Configurator({
                       </span>
                       <ChevronRightIcon className="col-start-4 row-span-2 h-4 w-4 self-center text-ink-3" />
                       <span className="col-span-2 col-start-2 row-start-2 text-[12.5px] leading-4 text-ink-2">
-                        {CATEGORY_HINT[category]}
+                        {category.hint}
                       </span>
                     </button>
 
                     <AnimatePresence initial={false}>
-                      {active && variants.length > 0 ? (
+                      {active ? (
                         <motion.div
-                          key={category}
+                          key={category.id}
                           initial={{ opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: 4 }}
                           transition={{ duration: 0.24, ease: [0.2, 0.8, 0.2, 1] }}
                           className="pt-3"
                         >
-                          <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
-                            {variants.map((variant) => (
-                              <button
-                                key={variant.id}
-                                type="button"
-                                aria-pressed={selectedId === variant.id}
-                                onClick={() => setSelectedId(variant.id)}
-                                className="pill"
-                              >
-                                {variant.variantLabel}
-                              </button>
-                            ))}
-                          </div>
-                          {category === "other" ? (
-                            <p className="small mt-2 text-ink-2">
-                              Для «Другого» нужно фото — без него заявка не уйдёт.
-                            </p>
+                          {category.services.map((service) => (
+                            <div key={service.id} className="mb-3 last:mb-0">
+                              <div className="mb-1.5 flex items-baseline justify-between gap-3">
+                                <span className="label text-ink-2">
+                                  {service.label}
+                                </span>
+                                {service.hint ? (
+                                  <span className="caption truncate">
+                                    {service.hint}
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
+                                {service.variants.map((variant) => (
+                                  <button
+                                    key={variant.id}
+                                    type="button"
+                                    aria-pressed={selected?.id === variant.id}
+                                    onClick={() => selectVariant(variant.id)}
+                                    className="pill"
+                                  >
+                                    {variant.variantLabel}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+
+                          {selected ? (
+                            <div className="card mt-2 p-4">
+                              {!selected.isManual ? (
+                                <ParameterInput
+                                  key={selected.id}
+                                  id={`param-${selected.id}`}
+                                  label={
+                                    selected.parameterLabel || "Количество"
+                                  }
+                                  unit={selected.unit}
+                                  value={parameterValue}
+                                  min={selected.minValue ?? 1}
+                                  max={selected.maxValue ?? 99}
+                                  step={selected.step ?? 1}
+                                  onChange={setParameterValue}
+                                />
+                              ) : (
+                                <p className="small text-ink-2">
+                                  Опишите предмет и добавьте фото в корзине —
+                                  мастер назовёт цену после осмотра.
+                                </p>
+                              )}
+
+                              {selected.options.length > 0 ? (
+                                <div className="mt-4">
+                                  <div className="label mb-2 text-ink-2">
+                                    Доплаты
+                                  </div>
+                                  <LineOptionsEditor
+                                    options={selected.options}
+                                    selections={optionSelections}
+                                    onChange={setOptionSelections}
+                                  />
+                                </div>
+                              ) : null}
+
+                              <div className="mt-4 flex items-baseline justify-between gap-3 border-t border-line pt-3">
+                                <span className="small text-ink-2">
+                                  Предварительно
+                                </span>
+                                <span className="tabular text-[20px] font-semibold">
+                                  {priceLabel}
+                                </span>
+                              </div>
+                              {!selected.isManual &&
+                              preview?.formulas[selected.id] ? (
+                                <p className="caption mt-1">
+                                  {preview.formulas[selected.id]}
+                                </p>
+                              ) : null}
+                              {preview && preview.minimumApplied > 0 ? (
+                                <p className="caption mt-1">
+                                  С учётом минимального заказа{" "}
+                                  {formatRub(rules.minOrder)}.
+                                </p>
+                              ) : null}
+                            </div>
                           ) : null}
                         </motion.div>
                       ) : null}
@@ -252,26 +400,28 @@ export function Configurator({
             <div className="card p-6">
               <div className="kicker">Как считается цена</div>
               <p className="body mt-3 text-ink-2">
-                Базовая цена варианта, количество, доплаты за сильные загрязнения и
-                вторую сторону матраса. Минимум заказа — {formatRub(minOrder)} за
-                чистку, выезд за город считается отдельно.
+                Значение параметра × цена за единицу. Затем проценты и фиксы,
+                минимум заказа — {formatRub(rules.minOrder)} за работы. Выезд
+                за город считается отдельно.
               </p>
               <div className="hr my-5" />
-              <div className="flex items-baseline justify-between">
+              <div className="flex items-baseline justify-between gap-3">
                 <span className="small text-ink-2">Выбрано</span>
-                <span className="text-[15px] font-semibold">
-                  {selected ? `${selected.label} · ${selected.variantLabel}` : "—"}
+                <span className="text-right text-[15px] font-semibold">
+                  {selected
+                    ? `${selected.label} · ${selected.variantLabel}`
+                    : "—"}
                 </span>
               </div>
               <div className="mt-2 flex items-baseline justify-between">
                 <span className="small text-ink-2">Предварительно</span>
                 <span className="tabular text-[22px] font-semibold tracking-[-0.02em]">
-                  {priceLabel}
+                  {priceLabel || "—"}
                 </span>
               </div>
               <p className="caption mt-4">
                 {selected?.isManual
-                  ? "Для «Другого» описание и фото добавите в корзине."
+                  ? "Для ручной позиции описание и фото добавите в корзине."
                   : "Точную цену мастер подтвердит после фото. Снимок можно добавить сразу."}
               </p>
             </div>
@@ -296,12 +446,12 @@ export function Configurator({
                 <div className="truncate text-[12.5px] leading-4 text-ink-2">
                   {selected
                     ? `${selected.label} · ${selected.variantLabel}`
-                    : "Выберите мебель"}
+                    : "Выберите позицию"}
                 </div>
                 <div className="caption mt-0.5 truncate">
                   {selected?.isManual
                     ? "Цену назовёт мастер"
-                    : "Чистка, без выезда"}
+                    : `${selected?.parameterLabel ?? "Количество"}: ${formatDecimal(parameterValue)} ${selected?.unit ?? ""}`}
                 </div>
                 {photoCount > 0 ? (
                   <div

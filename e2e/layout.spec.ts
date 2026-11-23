@@ -120,7 +120,7 @@ test("служебные маршруты и заголовки", async ({ reque
 test("корзина: минимум в трёх состояниях", async ({ page }) => {
   // 1) Ниже минимума: кресло 1 200 → добавлено 1 300
   await page.goto("/");
-  await page.getByRole("button", { name: /^Кресло/ }).click();
+  await page.getByRole("button", { name: /^Кресл/ }).click();
   await page.getByRole("button", { name: "Обычное", exact: true }).click();
   await page.getByRole("button", { name: "В корзину" }).click();
   await page.getByRole("link", { name: /Корзина/ }).click();
@@ -141,7 +141,7 @@ test("корзина: минимум в трёх состояниях", async ({
   await page.getByRole("link", { name: /Корзина/ }).click();
 
   await expect(
-    page.getByText(/Минимальный заказ 2\s500\s₽ за чистку — выполнен/),
+    page.getByText(/Минимальный заказ 2\s500\s₽ за работы — выполнен/),
   ).toBeVisible();
   await page.screenshot({
     path: "test-results/screens/cart-min-equal.png",
@@ -172,7 +172,7 @@ test("оформление: фото «Другого» обязательно, 
   await page.getByRole("button", { name: "В корзину" }).click();
   await page.getByRole("link", { name: /Корзина/ }).click();
   await page
-    .getByLabel("Что почистить")
+    .getByLabel("Что оценить")
     .fill("Изголовье кровати и две подушки");
   await page.getByRole("button", { name: "Оформить заявку" }).click();
 
@@ -181,7 +181,7 @@ test("оформление: фото «Другого» обязательно, 
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.waitForTimeout(400);
 
-  const warning = page.getByText(/У «Другого» нет фото/);
+  const warning = page.getByText(/У позиции «По фото» нет фото/);
   await expect(warning).toBeVisible();
   await expect(page.getByRole("button", { name: "Отправить заявку" })).toBeDisabled();
 
