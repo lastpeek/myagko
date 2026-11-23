@@ -151,10 +151,7 @@ export function ServicePricingManager({
     kind: "ok" | "error";
     text: string;
   }>(null);
-  const [dragging, setDragging] = useState<{
-    kind: "category" | "service" | "variant" | "option";
-    id: string;
-  } | null>(null);
+
 
   const lineOptions = options.filter((option) => option.kind !== "fixed_order");
   const orderOptions = options.filter(
@@ -464,23 +461,12 @@ export function ServicePricingManager({
     }
   }
 
-  function dropOn(
+  function moveEntity(
     kind: "category" | "service" | "variant" | "option",
+    sourceId: string,
     targetId: string,
-    event?: React.DragEvent,
   ) {
-    let source = dragging;
-    const raw = event?.dataTransfer.getData("application/x-catalog");
-    if (raw) {
-      try {
-        source = JSON.parse(raw) as typeof dragging;
-      } catch {
-        // остаёмся на состоянии dragstart
-      }
-    }
-    if (!source || source.kind !== kind) return;
-    const sourceId = source.id;
-    setDragging(null);
+    if (sourceId === targetId) return;
 
     if (kind === "category") {
       setCategories((current) => moveItem(current, sourceId, targetId));
@@ -499,27 +485,57 @@ export function ServicePricingManager({
     }
   }
 
+  function startPointerDrag(
+    kind: "category" | "service" | "variant" | "option",
+    id: string,
+    event: React.PointerEvent,
+  ) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let targetId: string | null = null;
+
+    const move = (moveEvent: PointerEvent) => {
+      if (
+        Math.abs(moveEvent.clientX - startX) < 4 &&
+        Math.abs(moveEvent.clientY - startY) < 4
+      ) {
+        return;
+      }
+      const element = document.elementFromPoint(
+        moveEvent.clientX,
+        moveEvent.clientY,
+      );
+      const drop = element?.closest<HTMLElement>(
+        `[data-drop-kind="${kind}"]`,
+      );
+      const candidate = drop?.dataset.dropId;
+      if (candidate && candidate !== id) targetId = candidate;
+    };
+
+    const finish = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      if (targetId) moveEntity(kind, id, targetId);
+    };
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", finish);
+  }
+
   function dragHandle(
     kind: "category" | "service" | "variant" | "option",
     id: string,
   ) {
     return (
       <span
-        draggable
         data-testid="drag-handle"
         title="Перетащить"
         aria-hidden="true"
-        onPointerDown={() => setDragging({ kind, id })}
-        onDragStart={(event) => {
-          event.dataTransfer.effectAllowed = "move";
-          event.dataTransfer.setData(
-            "application/x-catalog",
-            JSON.stringify({ kind, id }),
-          );
-          setDragging({ kind, id });
-        }}
-        onDragEnd={() => setDragging(null)}
-        className="cursor-grab select-none px-1 text-[15px] leading-none text-ink-3 active:cursor-grabbing"
+        onPointerDown={(event) => startPointerDrag(kind, id, event)}
+        className="cursor-grab touch-none select-none px-1 text-[15px] leading-none text-ink-3 active:cursor-grabbing"
       >
         ⋮⋮
       </span>
@@ -594,12 +610,9 @@ export function ServicePricingManager({
           <section
             key={category.id}
             data-testid="category-card"
+            data-drop-kind="category"
+            data-drop-id={category.id}
             className="card overflow-hidden"
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={(event) => {
-              event.preventDefault();
-              dropOn("category", category.id, event);
-            }}
           >
             <div className="flex flex-wrap items-start gap-2 border-b border-line bg-surface-2/40 px-4 py-3">
               {dragHandle("category", category.id)}
@@ -669,12 +682,9 @@ export function ServicePricingManager({
                   <div
                     key={service.id}
                     data-testid="service-card"
+                    data-drop-kind="service"
+                    data-drop-id={service.id}
                     className="rounded-[14px] border border-line"
-                    onDragOver={(event) => event.preventDefault()}
-                    onDrop={(event) => {
-                      event.preventDefault();
-                      dropOn("service", service.id, event);
-                    }}
                   >
                     <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2.5">
                       {dragHandle("service", service.id)}
@@ -736,9 +746,6 @@ export function ServicePricingManager({
                           }
                           dragHandle={dragHandle("variant", variant.id)}
                           orderButtons={orderButtons("variant", variant.id)}
-                          onDrop={(event) =>
-                            dropOn("variant", variant.id, event)
-                          }
                         />
                       ))}
                       <button
@@ -787,12 +794,9 @@ export function ServicePricingManager({
           {options.map((option) => (
             <div
               key={option.id}
+              data-drop-kind="option"
+              data-drop-id={option.id}
               className="flex flex-wrap items-center gap-2 rounded-[12px] border border-line px-2.5 py-2"
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={(event) => {
-                event.preventDefault();
-                dropOn("option", option.id, event);
-              }}
             >
               {dragHandle("option", option.id)}
               <input
@@ -1110,7 +1114,6 @@ function VariantEditor({
   onDelete,
   dragHandle,
   orderButtons,
-  onDrop,
 }: {
   variant: AdminVariant;
   service: AdminCatalogService;
@@ -1119,14 +1122,13 @@ function VariantEditor({
   onDelete: () => void;
   dragHandle: React.ReactNode;
   orderButtons: React.ReactNode;
-  onDrop: (event: React.DragEvent) => void;
 }) {
   return (
     <details
       data-testid="variant-card"
+      data-drop-kind="variant"
+      data-drop-id={variant.id}
       className="rounded-[12px] border border-line bg-surface"
-      onDragOver={(event) => event.preventDefault()}
-      onDrop={onDrop}
     >
       <summary className="flex cursor-pointer list-none flex-wrap items-center gap-2 px-3 py-2.5">
         {dragHandle}

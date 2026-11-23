@@ -39,6 +39,18 @@ test("новая услуга из кабинета считается на са
   await variantCard.getByLabel("Макс").fill("1000");
   await variantCard.getByLabel("Шаг").fill("0.1");
 
+  const categoryCards = page.locator('[data-testid="category-card"]');
+  await categoryCards
+    .last()
+    .locator('[data-testid="drag-handle"]')
+    .first()
+    .dragTo(categoryCards.first());
+  await expect(
+    categoryCards
+      .first()
+      .locator('input[aria-label^="Название категории"]'),
+  ).toHaveValue("Потолки E2E");
+
   await page
     .getByRole("button", { name: "Сохранить услуги и цены" })
     .click();
