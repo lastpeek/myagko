@@ -5,6 +5,7 @@ import { companyConfig } from "@/config/company";
 import type { Database } from "@/lib/db";
 import {
   adminUsers,
+  catalogServices,
   company,
   priceOptions,
   services,
@@ -54,6 +55,49 @@ export const DEFAULT_SERVICES = [
   },
 ];
 
+export const DEFAULT_CATALOG_SERVICES = [
+  {
+    id: "sofa-divan",
+    categoryId: "sofa",
+    label: "Диван",
+    hint: "2, 3 места, угловой",
+    icon: "sofa",
+    sortOrder: 10,
+  },
+  {
+    id: "armchair-kreslo",
+    categoryId: "armchair",
+    label: "Кресло",
+    hint: "Обычное или с откидной спинкой",
+    icon: "armchair",
+    sortOrder: 20,
+  },
+  {
+    id: "mattress-matras",
+    categoryId: "mattress",
+    label: "Матрас",
+    hint: "С одной или двумя сторонами",
+    icon: "mattress",
+    sortOrder: 30,
+  },
+  {
+    id: "chair-stul",
+    categoryId: "chair",
+    label: "Стул",
+    hint: "Только сиденье или весь стул",
+    icon: "chair",
+    sortOrder: 40,
+  },
+  {
+    id: "other-drugoe",
+    categoryId: "other",
+    label: "Другое",
+    hint: "Опишите и приложите фото",
+    icon: "other",
+    sortOrder: 50,
+  },
+];
+
 export const DEFAULT_PRICE_OPTIONS = [
   {
     id: "soiling",
@@ -71,10 +115,22 @@ export const DEFAULT_PRICE_OPTIONS = [
   },
 ];
 
+const DEFAULT_VARIANT = {
+  unit: "шт",
+  parameterLabel: "Количество",
+  minValue: 1,
+  maxValue: 99,
+  step: 1,
+  requiresPhoto: false,
+  isManual: false,
+} as const;
+
 export const DEFAULT_TARIFFS = [
   {
     id: "sofa-2",
     category: "sofa" as const,
+    serviceId: "sofa-divan",
+    ...DEFAULT_VARIANT,
     label: "Диван",
     variantLabel: "2 места",
     basePrice: 2500,
@@ -85,6 +141,8 @@ export const DEFAULT_TARIFFS = [
   {
     id: "sofa-3",
     category: "sofa" as const,
+    serviceId: "sofa-divan",
+    ...DEFAULT_VARIANT,
     label: "Диван",
     variantLabel: "3 места",
     basePrice: 3200,
@@ -95,6 +153,8 @@ export const DEFAULT_TARIFFS = [
   {
     id: "sofa-corner",
     category: "sofa" as const,
+    serviceId: "sofa-divan",
+    ...DEFAULT_VARIANT,
     label: "Диван",
     variantLabel: "Угловой",
     basePrice: 4200,
@@ -105,6 +165,8 @@ export const DEFAULT_TARIFFS = [
   {
     id: "armchair-standard",
     category: "armchair" as const,
+    serviceId: "armchair-kreslo",
+    ...DEFAULT_VARIANT,
     label: "Кресло",
     variantLabel: "Обычное",
     basePrice: 1200,
@@ -115,6 +177,8 @@ export const DEFAULT_TARIFFS = [
   {
     id: "armchair-recliner",
     category: "armchair" as const,
+    serviceId: "armchair-kreslo",
+    ...DEFAULT_VARIANT,
     label: "Кресло",
     variantLabel: "Реклайнер",
     basePrice: 1800,
@@ -125,6 +189,8 @@ export const DEFAULT_TARIFFS = [
   {
     id: "mattress-single",
     category: "mattress" as const,
+    serviceId: "mattress-matras",
+    ...DEFAULT_VARIANT,
     label: "Матрас",
     variantLabel: "Односпальный",
     basePrice: 1500,
@@ -135,6 +201,8 @@ export const DEFAULT_TARIFFS = [
   {
     id: "mattress-double",
     category: "mattress" as const,
+    serviceId: "mattress-matras",
+    ...DEFAULT_VARIANT,
     label: "Матрас",
     variantLabel: "Двуспальный",
     basePrice: 2400,
@@ -145,6 +213,8 @@ export const DEFAULT_TARIFFS = [
   {
     id: "chair-seat",
     category: "chair" as const,
+    serviceId: "chair-stul",
+    ...DEFAULT_VARIANT,
     label: "Стул",
     variantLabel: "Только сиденье",
     basePrice: 500,
@@ -155,6 +225,8 @@ export const DEFAULT_TARIFFS = [
   {
     id: "chair-back",
     category: "chair" as const,
+    serviceId: "chair-stul",
+    ...DEFAULT_VARIANT,
     label: "Стул",
     variantLabel: "Сиденье и спинка",
     basePrice: 700,
@@ -165,6 +237,8 @@ export const DEFAULT_TARIFFS = [
   {
     id: "other",
     category: "other" as const,
+    serviceId: "other-drugoe",
+    ...DEFAULT_VARIANT,
     label: "Другое",
     variantLabel: "По фото",
     basePrice: null,
@@ -230,6 +304,21 @@ export async function seedDatabase(
       .onConflictDoNothing();
   }
 
+  for (const service of DEFAULT_CATALOG_SERVICES) {
+    await db
+      .insert(catalogServices)
+      .values({
+        id: service.id,
+        categoryId: service.categoryId,
+        label: service.label,
+        hint: service.hint,
+        icon: service.icon,
+        sortOrder: service.sortOrder,
+        isActive: true,
+      })
+      .onConflictDoNothing();
+  }
+
   for (const option of DEFAULT_PRICE_OPTIONS) {
     await db
       .insert(priceOptions)
@@ -238,6 +327,7 @@ export async function seedDatabase(
         label: option.label,
         kind: option.kind,
         value: option.value,
+        scope: "line",
         sortOrder: option.sortOrder,
         isActive: true,
       })
@@ -252,9 +342,15 @@ export async function seedDatabase(
       .values({
         id: item.id,
         category: item.category,
+        serviceId: item.serviceId,
         label: item.label,
         variantLabel: item.variantLabel,
+        unit: item.unit,
+        parameterLabel: item.parameterLabel,
         basePrice: item.basePrice,
+        minValue: item.minValue,
+        maxValue: item.maxValue,
+        step: item.step,
         requiresPhoto: item.requiresPhoto ?? false,
         allowsSoiling: item.allowsSoiling,
         allowsSecondSide: item.allowsSecondSide,

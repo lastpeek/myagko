@@ -296,7 +296,7 @@ describe("calculateOrder", () => {
     expect(result.total).toBe(4160);
   });
 
-  it("умножает фикс за позицию на количество", () => {
+  it("не умножает фикс на количество параметра: по умолчанию 1 штука", () => {
     const result = calc([
       {
         key: "custom",
@@ -309,9 +309,29 @@ describe("calculateOrder", () => {
         optionIds: ["assembly"],
       },
     ]);
-    expect(result.lines[0]?.lineTotal).toBe(6400);
-    expect(result.lines[0]?.options[0]?.amount).toBe(400);
-    expect(result.total).toBe(6400);
+    expect(result.lines[0]?.lineTotal).toBe(6200);
+    expect(result.lines[0]?.options[0]?.quantity).toBe(1);
+    expect(result.lines[0]?.options[0]?.amount).toBe(200);
+    expect(result.total).toBe(6200);
+  });
+
+  it("умножает fixed-опцию на её собственное количество", () => {
+    const result = calc([
+      {
+        key: "custom",
+        category: "other",
+        basePrice: 3000,
+        quantity: 2,
+        options: [
+          { id: "assembly", label: "Углы", kind: "fixed", value: 200 },
+        ],
+        optionSelections: [{ id: "assembly", quantity: 4 }],
+      },
+    ]);
+    expect(result.lines[0]?.lineTotal).toBe(6800);
+    expect(result.lines[0]?.options[0]?.quantity).toBe(4);
+    expect(result.lines[0]?.options[0]?.amount).toBe(800);
+    expect(result.total).toBe(6800);
   });
 
   it("добавляет фикс за заказ один раз, не умножая на количество", () => {
@@ -378,6 +398,33 @@ describe("calculateOrder", () => {
     ]);
     expect(result.lines[0]?.lineTotal).toBe(3520);
     expect(result.total).toBe(3520);
+  });
+
+  it("считает дробные м² без промежуточного округления до рубля", () => {
+    const optionless = [
+      {
+        key: "a",
+        category: "ceilings",
+        parameterValue: 1.25,
+        pricePerUnit: 333,
+        options: [],
+      },
+      {
+        key: "b",
+        category: "ceilings",
+        parameterValue: 1.25,
+        pricePerUnit: 333,
+        options: [],
+      },
+    ];
+    const result = calculateOrder({
+      items: optionless,
+      rules: { ...rules, minOrder: 0 },
+      outOfTown: false,
+    });
+    expect(result.lines[0]?.lineTotal).toBe(416.25);
+    expect(result.itemsSubtotal).toBe(832.5);
+    expect(result.total).toBe(840);
   });
 
   it("не применяет фикс за заказ к минимуму", () => {

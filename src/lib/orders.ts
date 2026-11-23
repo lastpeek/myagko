@@ -7,9 +7,11 @@ import {
   calculateOrder,
   type AppliedPricingOption,
   type PricingOption,
+  type PricingOptionSelection,
 } from "@/lib/calc/pricing";
 import type { Database } from "@/lib/db";
 import {
+  catalogServices,
   company as companyTable,
   idempotencyKeys,
   orderEvents,
@@ -21,6 +23,7 @@ import {
   tariffItemOptions,
   tariffItems,
   tariffSettings,
+  type CatalogServiceRecord,
   type OrderBreakdown,
   type OrderStatus,
   type PriceOptionRecord,
@@ -67,6 +70,7 @@ function snapshotOf(
   settings: SettingsRecord,
   otherRequiresPhoto: boolean,
   options: PricingOption[],
+  catalogServiceRows: CatalogServiceRecord[],
 ): PriceSnapshot {
   return {
     capturedAt: new Date().toISOString(),
@@ -80,6 +84,13 @@ function snapshotOf(
     tariff: tariffs,
     otherRequiresPhoto,
     options,
+    catalogServices: catalogServiceRows.map((service) => ({
+      id: service.id,
+      categoryId: service.categoryId,
+      label: service.label,
+      hint: service.hint,
+      icon: service.icon,
+    })),
   };
 }
 
@@ -88,13 +99,17 @@ type ItemOptions = {
   byItem: Map<string, PricingOption[]>;
   /** Каталог активных опций для снимка. */
   catalog: PricingOption[];
+  /** Глобальные fixed_order-опции заказа. */
+  orderOptions: PricingOption[];
 };
 
 async function loadItemOptions(
   db: Database,
   itemIds: string[],
 ): Promise<ItemOptions> {
-  if (itemIds.length === 0) return { byItem: new Map(), catalog: [] };
+  if (itemIds.length === 0) {
+    return { byItem: new Map(), catalog: [], orderOptions: [] };
+  }
 
   const [links, rows] = await Promise.all([
     db
@@ -131,9 +146,13 @@ async function loadItemOptions(
     }
   }
 
+  const catalog = activeRows.map(toPricingOption);
   return {
     byItem,
-    catalog: activeRows.map(toPricingOption),
+    catalog,
+    orderOptions: catalog.filter(
+      (option) => option.scope === "order" && option.kind === "fixed_order",
+    ),
   };
 }
 
@@ -143,7 +162,65 @@ function toPricingOption(option: PriceOptionRecord): PricingOption {
     label: option.label,
     kind: option.kind,
     value: option.value,
+    scope: option.scope,
   };
+}
+
+function validateParameterValue(
+  tariff: typeof tariffItems.$inferSelect,
+  value: number,
+  index: number,
+): number {
+  if (!Number.isFinite(value)) {
+    throw new OrderValidationError(
+      `items.${index}.parameterValue`,
+      "Проверьте значение параметра",
+    );
+  }
+
+  const scaled = value * 100;
+  if (Math.abs(scaled - Math.round(scaled)) > 1e-9) {
+    throw new OrderValidationError(
+      `items.${index}.parameterValue`,
+      "Не больше двух знаков после запятой",
+    );
+  }
+
+  const valueHundredths = Math.round(scaled);
+  const minHundredths = Math.round(tariff.minValue * 100);
+  const maxHundredths = Math.round(tariff.maxValue * 100);
+  const stepHundredths = Math.round(tariff.step * 100);
+
+  if (
+    valueHundredths < minHundredths ||
+    valueHundredths > maxHundredths ||
+    stepHundredths <= 0 ||
+    (valueHundredths - minHundredths) % stepHundredths !== 0
+  ) {
+    throw new OrderValidationError(
+      `items.${index}.parameterValue`,
+      `Значение должно быть от ${tariff.minValue} до ${tariff.maxValue} с шагом ${tariff.step}`,
+    );
+  }
+
+  return value;
+}
+
+function normalizeOptionQuantity(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value)) return 1;
+  return Math.min(99, Math.max(1, Math.trunc(value)));
+}
+
+function selectedOptionsOf(item: {
+  optionIds?: string[];
+  optionSelections?: Array<{ id: string; quantity?: number }>;
+}): Array<{ id: string; quantity: number }> {
+  const selected = new Map<string, number>();
+  for (const optionId of item.optionIds ?? []) selected.set(optionId, 1);
+  for (const selection of item.optionSelections ?? []) {
+    selected.set(selection.id, normalizeOptionQuantity(selection.quantity));
+  }
+  return Array.from(selected, ([id, quantity]) => ({ id, quantity }));
 }
 
 export async function findOrderByToken(
@@ -212,13 +289,14 @@ export async function createOrder(
     overrides.company ??
     (await loadCompanyOrDefaults(db));
   const settings = overrides.settings ?? (await loadSettings(db));
-  const [allTariffs, activeServiceIds] = await Promise.all([
+  const [allTariffs, activeCatalogServices] = await Promise.all([
     overrides.tariffs ?? loadActiveTariffs(db),
-    loadActiveServiceIds(db),
+    loadActiveCatalogServices(db),
   ]);
-  const tariffs = allTariffs.filter((tariff) =>
-    activeServiceIds.has(tariff.category),
-  );
+  const tariffs = allTariffs.filter((tariff) => {
+    const service = activeCatalogServices.get(tariff.serviceId);
+    return Boolean(service && service.categoryId === tariff.category);
+  });
   const itemOptions = await loadItemOptions(
     db,
     tariffs.map((tariff) => tariff.id),
@@ -274,10 +352,12 @@ export async function createOrder(
       );
     }
 
-    const availableOptions = itemOptions.byItem.get(tariff.id);
-    const selectedOptionIds = Array.from(new Set(item.optionIds ?? []));
+    const availableOptions = itemOptions.byItem
+      .get(tariff.id)
+      ?.filter((option) => option.scope !== "order");
+    const selectedOptions = selectedOptionsOf(item);
 
-    if (tariff.isManual && selectedOptionIds.length > 0) {
+    if (tariff.isManual && selectedOptions.length > 0) {
       throw new OrderValidationError(
         `items.${index}.optionIds`,
         "Для позиции «По фото» опции не применяются",
@@ -288,14 +368,28 @@ export async function createOrder(
       const availableIds = new Set(
         availableOptions.map((option) => option.id),
       );
-      for (const optionId of selectedOptionIds) {
-        if (!availableIds.has(optionId)) {
+      for (const option of selectedOptions) {
+        if (!availableIds.has(option.id)) {
           throw new OrderValidationError(
             `items.${index}.optionIds`,
             "Эта опция недоступна для выбранного варианта. Обновите страницу.",
           );
         }
       }
+    }
+
+    const rawParameterValue = item.parameterValue ?? item.quantity ?? 1;
+    const parameterValue = validateParameterValue(
+      tariff,
+      rawParameterValue,
+      index,
+    );
+    const service = activeCatalogServices.get(tariff.serviceId);
+    if (!service) {
+      throw new OrderValidationError(
+        `items.${index}.tariffId`,
+        "Услуга выключена. Обновите страницу.",
+      );
     }
 
     const photos = photosByItem.get(index) ?? [];
@@ -345,12 +439,13 @@ export async function createOrder(
 
     return {
       tariff,
+      service,
       index,
-      quantity: item.quantity,
+      parameterValue,
       heavySoiling: tariff.allowsSoiling && item.heavySoiling,
       secondSide: tariff.allowsSecondSide && item.secondSide,
       options: availableOptions,
-      optionIds: selectedOptionIds,
+      optionSelections: selectedOptions satisfies PricingOptionSelection[],
       manualDescription: tariff.isManual
         ? (item.manualDescription?.trim() ?? "")
         : null,
@@ -358,19 +453,43 @@ export async function createOrder(
     };
   });
 
+  const selectedOrderOptionIds = Array.from(
+    new Set(payload.orderOptionIds ?? []),
+  );
+  const availableOrderOptionIds = new Set(
+    itemOptions.orderOptions.map((option) => option.id),
+  );
+  for (const optionId of selectedOrderOptionIds) {
+    if (!availableOrderOptionIds.has(optionId)) {
+      throw new OrderValidationError(
+        "orderOptionIds",
+        "Эта опция заказа недоступна. Обновите страницу.",
+      );
+    }
+  }
+
   const calculation = calculateOrder({
     items: resolved.map((item) => ({
       key: `${item.tariff.id}#${item.index}`,
       category: item.tariff.category,
-      basePrice: item.tariff.basePrice,
-      quantity: item.quantity,
+      serviceId: item.tariff.serviceId,
+      serviceLabel: item.service.label,
+      variantId: item.tariff.id,
+      variantLabel: item.tariff.variantLabel,
+      unit: item.tariff.unit,
+      parameterLabel: item.tariff.parameterLabel,
+      parameterValue: item.parameterValue,
+      pricePerUnit: item.tariff.basePrice ?? 0,
       heavySoiling: item.heavySoiling,
       secondSide: item.secondSide,
       manual: item.tariff.isManual,
       allowsSoiling: item.tariff.allowsSoiling,
       allowsSecondSide: item.tariff.allowsSecondSide,
       ...(item.options !== undefined
-        ? { options: item.options, optionIds: item.optionIds }
+        ? {
+            options: item.options,
+            optionSelections: item.optionSelections,
+          }
         : {}),
     })),
     rules: {
@@ -381,6 +500,8 @@ export async function createOrder(
       roundingStep: settings.roundingStep,
     },
     outOfTown: payload.customer.outOfTown,
+    orderOptions: itemOptions.orderOptions,
+    orderOptionIds: selectedOrderOptionIds,
   });
 
   const breakdown: OrderBreakdown = {
@@ -388,9 +509,17 @@ export async function createOrder(
       const priced = calculation.lines[index]!;
       return {
         key: `${item.tariff.id}#${item.index}`,
+        serviceId: item.tariff.serviceId,
+        serviceLabel: item.service.label,
+        variantId: item.tariff.id,
         label: item.tariff.label,
         variantLabel: item.tariff.variantLabel,
-        quantity: priced.quantity,
+        unit: item.tariff.unit,
+        parameterLabel: item.tariff.parameterLabel,
+        parameterValue: priced.parameterValue,
+        quantity: priced.parameterValue,
+        pricePerUnit: priced.manual ? null : priced.pricePerUnit,
+        baseTotal: priced.baseTotal,
         heavySoiling: priced.heavySoiling,
         secondSide: priced.secondSide,
         manual: priced.manual,
@@ -404,6 +533,7 @@ export async function createOrder(
     }),
     itemsSubtotal: calculation.itemsSubtotal,
     minimumAdjustment: calculation.minimumAdjustment,
+    minimumApplied: calculation.minimumApplied,
     outOfTownFee: calculation.outOfTownFee,
     orderOptions: calculation.orderOptions,
     orderOptionsTotal: calculation.orderOptionsTotal,
@@ -412,24 +542,40 @@ export async function createOrder(
     hasManualItems: calculation.hasManualItems,
     manualItemsCount: calculation.manualItemsCount,
     minOrder: settings.minOrder,
+    rules: {
+      minOrder: settings.minOrder,
+      roundingStep: settings.roundingStep,
+    },
   };
 
   const snapshot = snapshotOf(
-    tariffs.map((tariff) => ({
-      key: tariff.id,
-      category: tariff.category,
-      label: tariff.label,
-      variantLabel: tariff.variantLabel,
-      basePrice: tariff.basePrice,
-      requiresPhoto: tariff.requiresPhoto,
-      allowsSoiling: tariff.allowsSoiling,
-      allowsSecondSide: tariff.allowsSecondSide,
-      isManual: tariff.isManual,
-      options: itemOptions.byItem.get(tariff.id),
-    })),
+    tariffs.map((tariff) => {
+      const service = activeCatalogServices.get(tariff.serviceId);
+      return {
+        key: tariff.id,
+        category: tariff.category,
+        serviceId: tariff.serviceId,
+        serviceLabel: service?.label ?? tariff.label,
+        label: tariff.label,
+        variantLabel: tariff.variantLabel,
+        unit: tariff.unit,
+        parameterLabel: tariff.parameterLabel,
+        basePrice: tariff.basePrice,
+        pricePerUnit: tariff.basePrice,
+        minValue: tariff.minValue,
+        maxValue: tariff.maxValue,
+        step: tariff.step,
+        requiresPhoto: tariff.requiresPhoto,
+        allowsSoiling: tariff.allowsSoiling,
+        allowsSecondSide: tariff.allowsSecondSide,
+        isManual: tariff.isManual,
+        options: itemOptions.byItem.get(tariff.id),
+      };
+    }),
     settings,
     company.otherRequiresPhoto,
     itemOptions.catalog,
+    Array.from(activeCatalogServices.values()),
   );
 
   const storage = overrides.storage ?? getStorage();
@@ -549,8 +695,10 @@ export async function createOrder(
             category: item.tariff.category,
             label: item.tariff.label,
             variantLabel: item.tariff.variantLabel,
+            unit: item.tariff.unit,
+            parameterLabel: item.tariff.parameterLabel,
             manualDescription: item.manualDescription,
-            quantity: calculation.lines[index]!.quantity,
+            quantity: calculation.lines[index]!.parameterValue,
             heavySoiling: calculation.lines[index]!.heavySoiling,
             secondSide: calculation.lines[index]!.secondSide,
             unitBasePrice: calculation.lines[index]!.unitBasePrice,
@@ -664,12 +812,25 @@ async function loadActiveTariffs(
     .orderBy(asc(tariffItems.sortOrder));
 }
 
-async function loadActiveServiceIds(db: Database): Promise<Set<string>> {
-  const rows = await db
-    .select({ id: services.id })
-    .from(services)
-    .where(eq(services.isActive, true));
-  return new Set(rows.map((row) => row.id));
+async function loadActiveCatalogServices(
+  db: Database,
+): Promise<Map<string, CatalogServiceRecord>> {
+  const [categoryRows, serviceRows] = await Promise.all([
+    db
+      .select({ id: services.id })
+      .from(services)
+      .where(eq(services.isActive, true)),
+    db
+      .select()
+      .from(catalogServices)
+      .where(eq(catalogServices.isActive, true)),
+  ]);
+  const categoryIds = new Set(categoryRows.map((row) => row.id));
+  return new Map(
+    serviceRows
+      .filter((service) => categoryIds.has(service.categoryId))
+      .map((service) => [service.id, service]),
+  );
 }
 
 export type PublicOrderPhoto = {
@@ -680,9 +841,17 @@ export type PublicOrderPhoto = {
 
 export type PublicOrderItem = {
   id: string;
+  serviceId?: string;
+  serviceLabel?: string;
+  variantId?: string;
   category: string;
   label: string;
   variantLabel: string;
+  unit?: string;
+  parameterLabel?: string;
+  parameterValue?: number;
+  pricePerUnit?: number | null;
+  baseTotal?: number | null;
   manualDescription: string | null;
   quantity: number;
   heavySoiling: boolean;
@@ -709,6 +878,7 @@ export type PublicOrder = {
   totals: {
     itemsSubtotal: number;
     minimumAdjustment: number;
+    minimumApplied: number;
     outOfTownFee: number;
     orderOptionsTotal: number;
     roundingAdjustment: number;
@@ -716,6 +886,7 @@ export type PublicOrder = {
     minOrder: number;
     hasManualItems: boolean;
     manualItemsCount: number;
+    rules: { minOrder: number; roundingStep: number };
   };
   finalPrice: number | null;
   estimatedTotal: number | null;
@@ -779,25 +950,39 @@ export async function getPublicOrder(
     },
     outOfTown: order.outOfTown,
     comment: order.comment,
-    items: items.map((item) => ({
-      id: item.id,
-      category: item.category,
-      label: item.label,
-      variantLabel: item.variantLabel,
-      manualDescription: item.manualDescription,
-      quantity: item.quantity,
-      heavySoiling: item.heavySoiling,
-      secondSide: item.secondSide,
-      manual: item.unitBasePrice === null,
-      unitBasePrice: item.unitBasePrice,
-      lineTotal: item.lineTotal,
-      formula: item.formula,
-      options: item.options ?? [],
-      photos: photosByItem.get(item.id) ?? [],
-    })),
+    items: items.map((item, index) => {
+      const line = order.breakdown.lines[index];
+      return {
+        id: item.id,
+        serviceId: line?.serviceId,
+        serviceLabel: line?.serviceLabel,
+        variantId: line?.variantId,
+        category: item.category,
+        label: item.label,
+        variantLabel: item.variantLabel,
+        unit: item.unit ?? line?.unit,
+        parameterLabel: item.parameterLabel ?? line?.parameterLabel,
+        parameterValue: line?.parameterValue ?? item.quantity,
+        pricePerUnit: line?.pricePerUnit,
+        baseTotal: line?.baseTotal,
+        manualDescription: item.manualDescription,
+        quantity: item.quantity,
+        heavySoiling: item.heavySoiling,
+        secondSide: item.secondSide,
+        manual: item.unitBasePrice === null,
+        unitBasePrice: item.unitBasePrice,
+        lineTotal: item.lineTotal,
+        formula: item.formula,
+        options: item.options ?? [],
+        photos: photosByItem.get(item.id) ?? [],
+      };
+    }),
     totals: {
       itemsSubtotal: order.breakdown.itemsSubtotal,
       minimumAdjustment: order.breakdown.minimumAdjustment,
+      minimumApplied:
+        order.breakdown.minimumApplied ??
+        order.breakdown.minimumAdjustment,
       outOfTownFee: order.breakdown.outOfTownFee,
       orderOptionsTotal: order.breakdown.orderOptionsTotal ?? 0,
       roundingAdjustment: order.breakdown.roundingAdjustment,
@@ -805,6 +990,10 @@ export async function getPublicOrder(
       minOrder: order.breakdown.minOrder,
       hasManualItems: order.breakdown.hasManualItems,
       manualItemsCount: order.breakdown.manualItemsCount,
+      rules: order.breakdown.rules ?? {
+        minOrder: order.breakdown.minOrder,
+        roundingStep: order.priceSnapshot.rules.roundingStep,
+      },
     },
     finalPrice: order.finalPrice,
     estimatedTotal: order.estimatedTotal,

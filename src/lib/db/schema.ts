@@ -6,6 +6,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgTable,
   primaryKey,
   text,
@@ -18,6 +19,7 @@ import type {
   PricingCategory,
   PricingOption,
   PricingOptionKind,
+  PricingOptionScope,
   PricingRules,
 } from "@/lib/calc/pricing";
 
@@ -35,17 +37,33 @@ export type CompanySettings = {
   otherRequiresPhoto: boolean;
 };
 
+export type CatalogServiceSnapshot = {
+  id: string;
+  categoryId: string;
+  label: string;
+  hint: string;
+  icon: string;
+};
+
 export type TariffItemSnapshot = {
   key: string;
   category: PricingCategory;
+  serviceId?: string;
+  serviceLabel?: string;
   label: string;
   variantLabel: string;
+  unit?: string;
+  parameterLabel?: string;
   basePrice: number | null;
+  pricePerUnit?: number | null;
+  minValue?: number;
+  maxValue?: number;
+  step?: number;
   requiresPhoto: boolean;
   allowsSoiling: boolean;
   allowsSecondSide: boolean;
   isManual: boolean;
-  /** Опции варианта с kind и value на момент снимка. */
+  /** Опции варианта с kind/value/scope на момент снимка. */
   options?: PricingOption[];
 };
 
@@ -54,16 +72,28 @@ export type PriceSnapshot = {
   rules: PricingRules;
   tariff: TariffItemSnapshot[];
   otherRequiresPhoto: boolean;
-  /** Каталог опций с kind и value на момент снимка. */
+  /** Каталог опций с kind/value/scope на момент снимка. */
   options?: PricingOption[];
+  categories?: Array<{ id: string; label: string }>;
+  catalogServices?: CatalogServiceSnapshot[];
 };
 
 export type OrderBreakdown = {
   lines: Array<{
     key: string;
+    serviceId?: string;
+    serviceLabel?: string;
+    variantId?: string;
+    /** Легаси-название варианта; новые заявки дублируют в variantLabel. */
     label: string;
     variantLabel: string;
+    unit?: string;
+    parameterLabel?: string;
+    parameterValue?: number;
+    /** Старое имя quantity; новые заявки хранят значение параметра здесь. */
     quantity: number;
+    pricePerUnit?: number | null;
+    baseTotal?: number | null;
     /** Легаси-флаги: нужны для отображения заявок, созданных до опций. */
     heavySoiling: boolean;
     secondSide: boolean;
@@ -71,11 +101,12 @@ export type OrderBreakdown = {
     unitBasePrice: number | null;
     lineTotal: number | null;
     formula: string;
-    /** Выбранные опции; у старых заявок отсутствует. */
+    /** Выбранные опции с количеством и суммой. */
     options?: AppliedPricingOption[];
   }>;
   itemsSubtotal: number;
   minimumAdjustment: number;
+  minimumApplied?: number;
   outOfTownFee: number;
   /** Фиксированные доплаты «за заказ», один раз на заказ. */
   orderOptions?: AppliedPricingOption[];
@@ -85,6 +116,7 @@ export type OrderBreakdown = {
   hasManualItems: boolean;
   manualItemsCount: number;
   minOrder: number;
+  rules?: { minOrder: number; roundingStep: number };
 };
 
 export type OrderEventPayload = Record<string, string | number | null>;
@@ -92,6 +124,7 @@ export type OrderEventPayload = Record<string, string | number | null>;
 export type SettingsRecord = typeof tariffSettings.$inferSelect;
 export type TariffRecord = typeof tariffItems.$inferSelect;
 export type ServiceRecord = typeof services.$inferSelect;
+export type CatalogServiceRecord = typeof catalogServices.$inferSelect;
 export type PriceOptionRecord = typeof priceOptions.$inferSelect;
 export type OrderRecord = typeof orders.$inferSelect;
 
@@ -143,6 +176,28 @@ export const services = pgTable(
   (table) => [index("services_sort_idx").on(table.sortOrder)],
 );
 
+export const catalogServices = pgTable(
+  "catalog_services",
+  {
+    id: text("id").primaryKey(),
+    categoryId: text("category_id")
+      .notNull()
+      .references(() => services.id, { onDelete: "restrict" }),
+    label: text("label").notNull(),
+    hint: text("hint").notNull().default(""),
+    icon: text("icon").notNull().default("other"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    isActive: boolean("is_active").notNull().default(true),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("catalog_services_category_idx").on(table.categoryId, table.sortOrder),
+    index("catalog_services_sort_idx").on(table.sortOrder),
+  ],
+);
+
 export const priceOptions = pgTable(
   "price_options",
   {
@@ -150,6 +205,7 @@ export const priceOptions = pgTable(
     label: text("label").notNull(),
     kind: text("kind").$type<PricingOptionKind>().notNull(),
     value: integer("value").notNull(),
+    scope: text("scope").$type<PricingOptionScope>().notNull().default("line"),
     sortOrder: integer("sort_order").notNull().default(0),
     isActive: boolean("is_active").notNull().default(true),
     updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -162,6 +218,10 @@ export const priceOptions = pgTable(
       "price_options_kind_check",
       sql`${table.kind} in ('percent', 'fixed', 'fixed_order')`,
     ),
+    check(
+      "price_options_scope_check",
+      sql`${table.scope} in ('line', 'order')`,
+    ),
   ],
 );
 
@@ -173,9 +233,23 @@ export const tariffItems = pgTable(
       .$type<PricingCategory>()
       .notNull()
       .references(() => services.id, { onDelete: "restrict" }),
+    serviceId: text("service_id")
+      .notNull()
+      .references(() => catalogServices.id, { onDelete: "restrict" }),
     label: text("label").notNull(),
     variantLabel: text("variant_label").notNull(),
+    unit: text("unit").notNull().default("шт"),
+    parameterLabel: text("parameter_label").notNull().default("Количество"),
     basePrice: integer("base_price"),
+    minValue: numeric("min_value", { precision: 10, scale: 2, mode: "number" })
+      .notNull()
+      .default(1),
+    maxValue: numeric("max_value", { precision: 10, scale: 2, mode: "number" })
+      .notNull()
+      .default(99),
+    step: numeric("step", { precision: 10, scale: 2, mode: "number" })
+      .notNull()
+      .default(1),
     requiresPhoto: boolean("requires_photo").notNull().default(false),
     allowsSoiling: boolean("allows_soiling").notNull().default(true),
     allowsSecondSide: boolean("allows_second_side").notNull().default(false),
@@ -186,7 +260,14 @@ export const tariffItems = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (table) => [index("tariff_items_sort_idx").on(table.sortOrder)],
+  (table) => [
+    index("tariff_items_sort_idx").on(table.sortOrder),
+    index("tariff_items_service_idx").on(table.serviceId, table.sortOrder),
+    check(
+      "tariff_items_value_range_check",
+      sql`${table.minValue} <= ${table.maxValue} and ${table.step} > 0`,
+    ),
+  ],
 );
 
 export const tariffItemOptions = pgTable(
@@ -287,11 +368,18 @@ export const orderItems = pgTable(
     label: text("label").notNull(),
     variantLabel: text("variant_label").notNull(),
     manualDescription: text("manual_description"),
-    quantity: integer("quantity").notNull(),
+    unit: text("unit"),
+    parameterLabel: text("parameter_label"),
+    quantity: numeric("quantity", { precision: 10, scale: 2, mode: "number" })
+      .notNull(),
     heavySoiling: boolean("heavy_soiling").notNull().default(false),
     secondSide: boolean("second_side").notNull().default(false),
     unitBasePrice: integer("unit_base_price"),
-    lineTotal: integer("line_total"),
+    lineTotal: numeric("line_total", {
+      precision: 12,
+      scale: 2,
+      mode: "number",
+    }),
     formula: text("formula").notNull().default(""),
     options: jsonb("options").$type<AppliedPricingOption[]>(),
     sortOrder: integer("sort_order").notNull().default(0),

@@ -4,12 +4,14 @@ import { asc, eq } from "drizzle-orm";
 import { companyConfig } from "@/config/company";
 import { getDb } from "@/lib/db";
 import {
+  catalogServices,
   company as companyTable,
   priceOptions,
   services,
   tariffItemOptions,
   tariffItems,
   tariffSettings,
+  type CatalogServiceRecord,
   type CompanySettings,
   type PriceOptionRecord,
   type ServiceRecord,
@@ -18,16 +20,24 @@ import {
 } from "@/lib/db/schema";
 import type { PricingRules } from "@/lib/calc/pricing";
 import type {
+  PublicCatalogService,
   PublicPriceOption,
   PublicRules,
   PublicService,
   PublicTariff,
 } from "@/lib/ui-types";
 
-export type { SettingsRecord, ServiceRecord, PriceOptionRecord, TariffRecord };
+export type {
+  CatalogServiceRecord,
+  SettingsRecord,
+  ServiceRecord,
+  PriceOptionRecord,
+  TariffRecord,
+};
 
 export type PricingCatalog = {
   services: PublicService[];
+  catalogServices: PublicCatalogService[];
   tariffs: PublicTariff[];
   options: PublicPriceOption[];
   rules: PublicRules;
@@ -35,6 +45,7 @@ export type PricingCatalog = {
 
 export type PricingConfig = {
   services: ServiceRecord[];
+  catalogServices: CatalogServiceRecord[];
   options: PriceOptionRecord[];
   items: TariffRecord[];
   links: (typeof tariffItemOptions.$inferSelect)[];
@@ -80,6 +91,18 @@ export const getPriceOptions = cache(async (): Promise<PriceOptionRecord[]> => {
     .from(priceOptions)
     .orderBy(asc(priceOptions.sortOrder), asc(priceOptions.id));
 });
+
+export const getCatalogServices = cache(
+  async (): Promise<CatalogServiceRecord[]> => {
+    return getDb()
+      .select()
+      .from(catalogServices)
+      .orderBy(
+        asc(catalogServices.sortOrder),
+        asc(catalogServices.id),
+      );
+  },
+);
 
 export const getTariffItems = cache(async (): Promise<TariffRecord[]> => {
   const db = getDb();
@@ -157,20 +180,41 @@ export function toPublicPriceOption(
     label: option.label,
     kind: option.kind,
     value: option.value,
+    scope: option.scope,
     sortOrder: option.sortOrder,
+  };
+}
+
+export function toPublicCatalogService(
+  service: CatalogServiceRecord,
+): PublicCatalogService {
+  return {
+    id: service.id,
+    categoryId: service.categoryId,
+    label: service.label,
+    hint: service.hint,
+    icon: service.icon,
   };
 }
 
 export function toPublicTariff(
   item: TariffRecord,
   options: PublicPriceOption[] = [],
+  serviceLabel = item.label,
 ): PublicTariff {
   return {
     id: item.id,
     category: item.category,
+    serviceId: item.serviceId,
+    serviceLabel,
     label: item.label,
     variantLabel: item.variantLabel,
+    unit: item.unit,
+    parameterLabel: item.parameterLabel,
     basePrice: item.basePrice,
+    minValue: item.minValue,
+    maxValue: item.maxValue,
+    step: item.step,
     requiresPhoto: item.requiresPhoto,
     allowsSoiling: item.allowsSoiling,
     allowsSecondSide: item.allowsSecondSide,
@@ -182,12 +226,19 @@ export function toPublicTariff(
 /** Каталог для сайта: только активные услуги, варианты и опции. */
 export const getPricingCatalog = cache(async (): Promise<PricingCatalog> => {
   const db = getDb();
-  const [serviceRows, itemRows, optionRows, links, settings] =
+  const [serviceRows, catalogServiceRows, itemRows, optionRows, links, settings] =
     await Promise.all([
       getDb()
         .select()
         .from(services)
         .orderBy(asc(services.sortOrder), asc(services.id)),
+      getDb()
+        .select()
+        .from(catalogServices)
+        .orderBy(
+          asc(catalogServices.sortOrder),
+          asc(catalogServices.id),
+        ),
       getDb()
         .select()
         .from(tariffItems)
@@ -202,6 +253,12 @@ export const getPricingCatalog = cache(async (): Promise<PricingCatalog> => {
 
   const activeServices = serviceRows.filter((service) => service.isActive);
   const serviceIds = new Set(activeServices.map((service) => service.id));
+  const activeCatalogServices = catalogServiceRows.filter(
+    (service) => service.isActive && serviceIds.has(service.categoryId),
+  );
+  const catalogServiceIds = new Set(
+    activeCatalogServices.map((service) => service.id),
+  );
   const activeOptions = optionRows.filter((option) => option.isActive);
   const optionById = new Map(
     activeOptions.map((option) => [option.id, toPublicPriceOption(option)]),
@@ -218,14 +275,22 @@ export const getPricingCatalog = cache(async (): Promise<PricingCatalog> => {
 
   return {
     services: activeServices.map(toPublicService),
+    catalogServices: activeCatalogServices.map(toPublicCatalogService),
     tariffs: itemRows
-      .filter((item) => item.isActive && serviceIds.has(item.category))
+      .filter(
+        (item) =>
+          item.isActive &&
+          serviceIds.has(item.category) &&
+          catalogServiceIds.has(item.serviceId),
+      )
       .map((item) =>
         toPublicTariff(
           item,
           (optionsByItem.get(item.id) ?? []).sort(
             (a, b) => a.sortOrder - b.sortOrder,
           ),
+          activeCatalogServices.find((service) => service.id === item.serviceId)
+            ?.label ?? item.label,
         ),
       ),
     options: activeOptions.map(toPublicPriceOption),
@@ -236,16 +301,19 @@ export const getPricingCatalog = cache(async (): Promise<PricingCatalog> => {
 /** Полная конфигурация для кабинета: включая архивные строки. */
 export const getPricingConfig = cache(async (): Promise<PricingConfig> => {
   const db = getDb();
-  const [serviceRows, optionRows, items, links, settings] = await Promise.all([
-    getServices(),
-    getPriceOptions(),
-    getTariffItems(),
-    db.select().from(tariffItemOptions),
-    getSettings(),
-  ]);
+  const [serviceRows, catalogServiceRows, optionRows, items, links, settings] =
+    await Promise.all([
+      getServices(),
+      getCatalogServices(),
+      getPriceOptions(),
+      getTariffItems(),
+      db.select().from(tariffItemOptions),
+      getSettings(),
+    ]);
 
   return {
     services: serviceRows,
+    catalogServices: catalogServiceRows,
     options: optionRows,
     items,
     links,

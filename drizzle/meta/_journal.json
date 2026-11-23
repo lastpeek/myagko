@@ -43,6 +43,13 @@
       "when": 1795439824962,
       "tag": "0005_silent_the_call",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795443527051,
+      "tag": "0006_moaning_madelyne_pryor",
+      "breakpoints": true
     }
   ]
 }

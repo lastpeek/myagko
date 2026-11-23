@@ -1,7 +1,10 @@
-import { eq, inArray } from "drizzle-orm";
+import { createHash } from "node:crypto";
+
+import { and, eq, inArray } from "drizzle-orm";
 
 import type { Database } from "@/lib/db";
 import {
+  catalogServices,
   priceOptions,
   services,
   tariffItemOptions,
@@ -157,6 +160,9 @@ async function applyFullUpdate(
           label: option.label,
           kind: option.kind,
           value: option.value,
+          scope:
+            option.scope ??
+            (option.kind === "fixed_order" ? "order" : "line"),
           sortOrder: option.sortOrder,
           isActive: option.isActive,
           updatedAt: now,
@@ -167,6 +173,9 @@ async function applyFullUpdate(
             label: option.label,
             kind: option.kind,
             value: option.value,
+            scope:
+              option.scope ??
+              (option.kind === "fixed_order" ? "order" : "line"),
             sortOrder: option.sortOrder,
             isActive: option.isActive,
             updatedAt: now,
@@ -179,14 +188,66 @@ async function applyFullUpdate(
         throw new TariffUpdateError("Нужны полные данные варианта");
       }
 
+      let serviceId = item.serviceId;
+      if (!serviceId) {
+        const existing = await tx
+          .select({ id: catalogServices.id })
+          .from(catalogServices)
+          .where(
+            and(
+              eq(catalogServices.categoryId, item.category),
+              eq(catalogServices.label, item.label),
+            ),
+          )
+          .limit(1);
+        serviceId =
+          existing[0]?.id ??
+          `${item.category}-${createHash("sha1")
+            .update(item.label)
+            .digest("hex")
+            .slice(0, 10)}`;
+      }
+
+      const serviceRow = await tx
+        .select({ categoryId: catalogServices.categoryId })
+        .from(catalogServices)
+        .where(eq(catalogServices.id, serviceId))
+        .limit(1);
+
+      if (serviceRow[0] && serviceRow[0].categoryId !== item.category) {
+        throw new TariffUpdateError("Услуга относится к другой категории");
+      }
+
+      if (!serviceRow[0]) {
+        await tx
+          .insert(catalogServices)
+          .values({
+            id: serviceId,
+            categoryId: item.category,
+            label: item.label,
+            hint: "",
+            icon: "other",
+            sortOrder: item.sortOrder,
+            isActive: true,
+            updatedAt: now,
+          })
+          .onConflictDoNothing();
+      }
+
       await tx
         .insert(tariffItems)
         .values({
           id: item.id,
           category: item.category,
+          serviceId,
           label: item.label,
           variantLabel: item.variantLabel,
+          unit: item.unit,
+          parameterLabel: item.parameterLabel,
           basePrice: item.isManual ? null : item.basePrice,
+          minValue: item.minValue,
+          maxValue: item.maxValue,
+          step: item.step,
           requiresPhoto: item.requiresPhoto,
           allowsSoiling: true,
           allowsSecondSide: false,
@@ -199,9 +260,15 @@ async function applyFullUpdate(
           target: tariffItems.id,
           set: {
             category: item.category,
+            serviceId,
             label: item.label,
             variantLabel: item.variantLabel,
+            unit: item.unit,
+            parameterLabel: item.parameterLabel,
             basePrice: item.isManual ? null : item.basePrice,
+            minValue: item.minValue,
+            maxValue: item.maxValue,
+            step: item.step,
             requiresPhoto: item.requiresPhoto,
             isManual: item.isManual,
             sortOrder: item.sortOrder,

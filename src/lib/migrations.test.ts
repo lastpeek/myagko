@@ -19,16 +19,19 @@ async function applyMigration(
 
 async function counts(client: PGlite): Promise<{
   services: number;
+  catalogServices: number;
   options: number;
   links: number;
 }> {
   const result = await client.query<{
     services: number;
+    catalogServices: number;
     options: number;
     links: number;
   }>(`
     select
       (select count(*)::int from "services") as services,
+      (select count(*)::int from "catalog_services") as "catalogServices",
       (select count(*)::int from "price_options") as options,
       (select count(*)::int from "tariff_item_options") as links
   `);
@@ -46,6 +49,7 @@ describe("миграции услуг и опций", () => {
         "0003_serious_runaways.sql",
         "0004_light_fantastic_four.sql",
         "0005_silent_the_call.sql",
+        "0006_moaning_madelyne_pryor.sql",
       ]) {
         await applyMigration(client, file);
       }
@@ -53,6 +57,7 @@ describe("миграции услуг и опций", () => {
       const first = await counts(client);
       await applyMigration(client, "0004_light_fantastic_four.sql");
       await applyMigration(client, "0005_silent_the_call.sql");
+      await applyMigration(client, "0006_moaning_madelyne_pryor.sql");
       const second = await counts(client);
 
       expect(second).toEqual(first);
@@ -151,6 +156,11 @@ describe("миграции услуг и опций", () => {
 
       await applyMigration(client, "0004_light_fantastic_four.sql");
       await applyMigration(client, "0005_silent_the_call.sql");
+      await client.exec(`
+        insert into "price_options" ("id", "label", "kind", "value", "sort_order", "is_active")
+        values ('rush', 'Срочность', 'fixed_order', 1000, 30, true);
+      `);
+      await applyMigration(client, "0006_moaning_madelyne_pryor.sql");
 
       await client.exec(`
         update "services" set "is_active" = false where "id" = 'custom';
@@ -160,6 +170,7 @@ describe("миграции услуг и опций", () => {
       const afterDirty = await counts(client);
       await applyMigration(client, "0004_light_fantastic_four.sql");
       await applyMigration(client, "0005_silent_the_call.sql");
+      await applyMigration(client, "0006_moaning_madelyne_pryor.sql");
       const afterSecondRun = await counts(client);
       expect(afterSecondRun).toEqual(afterDirty);
 
@@ -185,6 +196,25 @@ describe("миграции услуг и опций", () => {
         `select "is_active" from "services" where "id" = 'custom'`,
       );
       expect(custom.rows[0]?.is_active).toBe(false);
+
+      const variants = await client.query<{
+        service_id: string;
+        unit: string;
+        parameter_label: string;
+      }>(
+        `select "service_id", "unit", "parameter_label" from "tariff_items"`,
+      );
+      expect(variants.rows.length).toBeGreaterThan(0);
+      for (const variant of variants.rows) {
+        expect(variant.service_id).toBeTruthy();
+        expect(variant.unit).toBe("шт");
+        expect(variant.parameter_label).toBe("Количество");
+      }
+
+      const rush = await client.query<{ scope: string }>(
+        `select "scope" from "price_options" where "id" = 'rush'`,
+      );
+      expect(rush.rows[0]?.scope).toBe("order");
 
       await expect(
         client.exec(

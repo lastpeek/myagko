@@ -12,10 +12,22 @@ const trimmed = (min: number, max: number, message: string) =>
 
 export const orderItemInputSchema = z.object({
   tariffId: z.string().trim().min(1).max(64),
-  quantity: z.number().int().min(1).max(10),
+  /** Легаси-количество; новые клиенты присылают parameterValue. */
+  quantity: z.number().int().min(1).max(99).optional(),
+  /** Значение параметра варианта: 2 шт, 20.5 м², 12.5 м.п. */
+  parameterValue: z.number().finite().min(0).max(1_000_000).optional(),
   heavySoiling: z.boolean().default(false),
   secondSide: z.boolean().default(false),
   optionIds: z.array(z.string().trim().min(1).max(64)).max(20).optional(),
+  optionSelections: z
+    .array(
+      z.object({
+        id: z.string().trim().min(1).max(64),
+        quantity: z.number().int().min(1).max(99).optional(),
+      }),
+    )
+    .max(20)
+    .optional(),
   manualDescription: z
     .string()
     .trim()
@@ -44,6 +56,7 @@ export const createOrderSchema = z
     consent: z.literal(true, {
       message: "Без согласия на обработку данных заявку принять нельзя",
     }),
+    orderOptionIds: z.array(z.string().trim().min(1).max(64)).max(20).optional(),
     idempotencyKey: z
       .string()
       .regex(/^[A-Za-z0-9_-]{16,64}$/, "Некорректный ключ отправки"),
@@ -173,6 +186,7 @@ export const pricingOptionInputSchema = z
     label: trimmed(1, 60, "Название опции"),
     kind: z.enum(["percent", "fixed", "fixed_order"]),
     value: z.number().int().min(0).max(1_000_000),
+    scope: z.enum(["line", "order"]).optional(),
     sortOrder: z.number().int().min(0).max(100_000),
     isActive: z.boolean(),
   })
@@ -184,22 +198,72 @@ export const pricingOptionInputSchema = z
         path: ["value"],
       });
     }
+    const expectedScope = option.kind === "fixed_order" ? "order" : "line";
+    if (option.scope !== undefined && option.scope !== expectedScope) {
+      ctx.addIssue({
+        code: "custom",
+        message:
+          expectedScope === "order"
+            ? "Фикс за заказ должен иметь scope=order"
+            : "Проценты и фикс за единицу должны иметь scope=line",
+        path: ["scope"],
+      });
+    }
   });
 
 export const tariffItemUpdateSchema = z
   .object({
     id: pricingId,
     category: pricingId,
+    serviceId: pricingId.optional(),
     label: trimmed(1, 60, "Название услуги"),
     variantLabel: trimmed(1, 60, "Название варианта"),
+    unit: z.string().trim().min(1).max(20).default("шт"),
+    parameterLabel: z.string().trim().min(1).max(40).default("Количество"),
     basePrice: z.number().int().min(0).max(1_000_000).nullable(),
+    minValue: z.number().finite().min(0).max(1_000_000).default(1),
+    maxValue: z.number().finite().min(0).max(1_000_000).default(99),
+    step: z.number().finite().positive().max(10_000).default(1),
     requiresPhoto: z.boolean(),
     isManual: z.boolean(),
     isActive: z.boolean(),
     sortOrder: z.number().int().min(0).max(100_000),
     optionIds: z.array(pricingId).max(20),
   })
-  .strict();
+  .strict()
+  .superRefine((item, ctx) => {
+    for (const field of ["minValue", "maxValue", "step"] as const) {
+      const scaled = item[field] * 100;
+      if (Math.abs(scaled - Math.round(scaled)) > 1e-9) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Не больше двух знаков после запятой",
+          path: [field],
+        });
+      }
+    }
+    if (item.minValue > item.maxValue) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Минимум не может быть больше максимума",
+        path: ["minValue"],
+      });
+    }
+    if (item.isManual && item.basePrice !== null) {
+      ctx.addIssue({
+        code: "custom",
+        message: "У позиции «По фото» цена не задаётся",
+        path: ["basePrice"],
+      });
+    }
+    if (!item.isManual && item.basePrice === null) {
+      ctx.addIssue({
+        code: "custom",
+        message: "У варианта с фиксированной ценой цена обязательна",
+        path: ["basePrice"],
+      });
+    }
+  });
 
 /** Старый payload кабинета: меняются только цена и видимость. */
 export const legacyTariffItemUpdateSchema = z
@@ -331,6 +395,15 @@ export const updateTariffsSchema = z
   });
 
 export type UpdateTariffsInput = z.infer<typeof updateTariffsSchema>;
+
+export const catalogDeleteSchema = z.object({
+  kind: z.enum(["category", "service", "variant"]),
+  id: z.string().trim().min(1).max(64),
+});
+
+export const catalogActiveSchema = catalogDeleteSchema.extend({
+  isActive: z.boolean(),
+});
 
 export const updateCompanySchema = z.object({
   name: trimmed(1, 60, "Название компании"),

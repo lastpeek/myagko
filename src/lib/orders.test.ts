@@ -17,6 +17,7 @@ import {
 import { closeDb, getDb, runMigrations } from "@/lib/db";
 import {
   adminUsers,
+  catalogServices,
   company,
   orderItems,
   orderPhotos,
@@ -124,10 +125,51 @@ beforeAll(async () => {
     startingOrderNumber: 1001,
   });
 
+  await db.insert(catalogServices).values([
+    {
+      id: "sofa-divan",
+      categoryId: "sofa",
+      label: "Диван",
+      hint: "",
+      icon: "sofa",
+      sortOrder: 10,
+      isActive: true,
+    },
+    {
+      id: "mattress-matras",
+      categoryId: "mattress",
+      label: "Матрас",
+      hint: "",
+      icon: "mattress",
+      sortOrder: 20,
+      isActive: true,
+    },
+    {
+      id: "other-drugoe",
+      categoryId: "other",
+      label: "Другое",
+      hint: "",
+      icon: "other",
+      sortOrder: 30,
+      isActive: true,
+    },
+  ]);
+
+  const variantDefaults = {
+    unit: "шт",
+    parameterLabel: "Количество",
+    minValue: 1,
+    maxValue: 99,
+    step: 1,
+    requiresPhoto: false,
+    isManual: false,
+  };
+
   const tariffs = [
     {
       id: "sofa-2",
       category: "sofa" as const,
+      serviceId: "sofa-divan",
       label: "Диван",
       variantLabel: "2 места",
       basePrice: 2500,
@@ -137,6 +179,7 @@ beforeAll(async () => {
     {
       id: "sofa-3",
       category: "sofa" as const,
+      serviceId: "sofa-divan",
       label: "Диван",
       variantLabel: "3 места",
       basePrice: 3200,
@@ -146,6 +189,7 @@ beforeAll(async () => {
     {
       id: "mattress-double",
       category: "mattress" as const,
+      serviceId: "mattress-matras",
       label: "Матрас",
       variantLabel: "Двуспальный",
       basePrice: 2400,
@@ -155,6 +199,7 @@ beforeAll(async () => {
     {
       id: "other",
       category: "other" as const,
+      serviceId: "other-drugoe",
       label: "Другое",
       variantLabel: "По фото",
       basePrice: null,
@@ -167,9 +212,8 @@ beforeAll(async () => {
 
   for (const [index, tariff] of tariffs.entries()) {
     await db.insert(tariffItems).values({
+      ...variantDefaults,
       ...tariff,
-      requiresPhoto: tariff.requiresPhoto ?? false,
-      isManual: tariff.isManual ?? false,
       sortOrder: index * 10 + 10,
       isActive: true,
     });
@@ -183,6 +227,7 @@ beforeAll(async () => {
         label: "Доставка оборудования",
         kind: "fixed_order",
         value: 500,
+        scope: "order",
         sortOrder: 30,
         isActive: true,
       },
@@ -191,6 +236,7 @@ beforeAll(async () => {
         label: "Сборка",
         kind: "fixed",
         value: 200,
+        scope: "line",
         sortOrder: 25,
         isActive: true,
       },
@@ -202,11 +248,69 @@ beforeAll(async () => {
     .values([
       { itemId: "sofa-2", optionId: "soiling" },
       { itemId: "sofa-3", optionId: "soiling" },
-      { itemId: "sofa-3", optionId: "delivery" },
       { itemId: "sofa-3", optionId: "assembly" },
       { itemId: "mattress-double", optionId: "soiling" },
       { itemId: "mattress-double", optionId: "second-side" },
     ])
+    .onConflictDoNothing();
+
+  await db
+    .insert(services)
+    .values({
+      id: "ceilings",
+      label: "Потолки",
+      hint: "",
+      icon: "other",
+      sortOrder: 200,
+      isActive: true,
+    })
+    .onConflictDoNothing();
+  await db
+    .insert(catalogServices)
+    .values({
+      id: "ceilings-potolok",
+      categoryId: "ceilings",
+      label: "Потолок",
+      hint: "",
+      icon: "other",
+      sortOrder: 200,
+      isActive: true,
+    })
+    .onConflictDoNothing();
+  await db
+    .insert(tariffItems)
+    .values({
+      id: "ceiling-matte",
+      category: "ceilings",
+      serviceId: "ceilings-potolok",
+      label: "Потолок",
+      variantLabel: "Матовый",
+      unit: "м²",
+      parameterLabel: "Площадь",
+      basePrice: 300,
+      minValue: 1,
+      maxValue: 1000,
+      step: 0.1,
+      isManual: false,
+      sortOrder: 200,
+      isActive: true,
+    })
+    .onConflictDoNothing();
+  await db
+    .insert(priceOptions)
+    .values({
+      id: "corners",
+      label: "Углы",
+      kind: "fixed",
+      value: 200,
+      scope: "line",
+      sortOrder: 40,
+      isActive: true,
+    })
+    .onConflictDoNothing();
+  await db
+    .insert(tariffItemOptions)
+    .values({ itemId: "ceiling-matte", optionId: "corners" })
     .onConflictDoNothing();
 
   png = await sharp({
@@ -248,7 +352,9 @@ describe("POST /api/orders", () => {
     const order = await getPublicOrder(getDb(), data.token);
     expect(order?.totals.total).toBe(4160);
     expect(order?.items[0]?.lineTotal).toBe(4160);
-    expect(order?.items[0]?.formula).toBe("3\u00a0200 × 1.3 = 4\u00a0160 ₽");
+    expect(order?.items[0]?.formula).toBe(
+      "Количество: 1 шт × 3\u00a0200 ₽ × 1.3 = 4\u00a0160 ₽",
+    );
 
     const stored = await getDb()
       .select({ snapshot: orders.priceSnapshot, breakdown: orders.breakdown })
@@ -425,7 +531,7 @@ describe("POST /api/orders", () => {
     expect(order?.items[0]?.options[0]?.amount).toBe(960);
   });
 
-  it("умножает фикс за позицию на количество", async () => {
+  it("не умножает fixed-опцию на количество параметра", async () => {
     const payload = basePayload({
       items: [
         {
@@ -441,26 +547,131 @@ describe("POST /api/orders", () => {
     expect(response.status).toBe(201);
     const data = (await response.json()) as { token: string };
     const order = await getPublicOrder(getDb(), data.token);
-    expect(order?.items[0]?.lineTotal).toBe(6800);
-    expect(order?.totals.total).toBe(6800);
+    expect(order?.items[0]?.lineTotal).toBe(6600);
+    expect(order?.totals.total).toBe(6600);
+  });
+
+  it("отклоняет дробное количество у штучного варианта", async () => {
+    const payload = basePayload({
+      items: [
+        {
+          tariffId: "sofa-3",
+          parameterValue: 20.5,
+          heavySoiling: false,
+          secondSide: false,
+        },
+      ],
+    });
+    const response = await postOrder(payload, [], "10.0.0.13");
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { error: string }).error).toContain(
+      "шагом",
+    );
+  });
+
+  it("отклоняет значение вне min/max", async () => {
+    const tooSmall = await postOrder(
+      basePayload({
+        items: [
+          {
+            tariffId: "ceiling-matte",
+            parameterValue: 0.5,
+            heavySoiling: false,
+            secondSide: false,
+          },
+        ],
+      }),
+      [],
+      "10.0.0.25",
+    );
+    expect(tooSmall.status).toBe(400);
+
+    const tooLarge = await postOrder(
+      basePayload({
+        items: [
+          {
+            tariffId: "ceiling-matte",
+            parameterValue: 1001,
+            heavySoiling: false,
+            secondSide: false,
+          },
+        ],
+      }),
+      [],
+      "10.0.0.26",
+    );
+    expect(tooLarge.status).toBe(400);
+
+    const wrongStep = await postOrder(
+      basePayload({
+        items: [
+          {
+            tariffId: "ceiling-matte",
+            parameterValue: 20.55,
+            heavySoiling: false,
+            secondSide: false,
+          },
+        ],
+      }),
+      [],
+      "10.0.0.27",
+    );
+    expect(wrongStep.status).toBe(400);
+
+    const tooPrecise = await postOrder(
+      basePayload({
+        items: [
+          {
+            tariffId: "ceiling-matte",
+            parameterValue: 20.555,
+            heavySoiling: false,
+            secondSide: false,
+          },
+        ],
+      }),
+      [],
+      "10.0.0.28",
+    );
+    expect(tooPrecise.status).toBe(400);
+  });
+
+  it("считает fixed-опцию по её количеству, а не по площади", async () => {
+    const payload = basePayload({
+      items: [
+        {
+          tariffId: "ceiling-matte",
+          parameterValue: 20.5,
+          heavySoiling: false,
+          secondSide: false,
+          optionSelections: [{ id: "corners", quantity: 4 }],
+        },
+      ],
+    });
+    const response = await postOrder(payload, [], "10.0.0.23");
+    expect(response.status).toBe(201);
+    const data = (await response.json()) as { token: string };
+    const order = await getPublicOrder(getDb(), data.token);
+    expect(order?.items[0]?.lineTotal).toBe(6950);
+    expect(order?.totals.total).toBe(6950);
+    expect(order?.items[0]?.options[0]?.quantity).toBe(4);
+    expect(order?.items[0]?.options[0]?.amount).toBe(800);
   });
 
   it("добавляет фикс за заказ один раз и не дублирует его", async () => {
     const payload = basePayload({
+      orderOptionIds: ["delivery"],
       items: [
         {
           tariffId: "sofa-3",
           quantity: 2,
           heavySoiling: false,
           secondSide: false,
-          optionIds: ["delivery"],
         },
         {
           tariffId: "sofa-3",
           quantity: 1,
           heavySoiling: false,
           secondSide: false,
-          optionIds: ["delivery"],
         },
       ],
     });
@@ -481,7 +692,7 @@ describe("POST /api/orders", () => {
           quantity: 1,
           heavySoiling: false,
           secondSide: false,
-          optionIds: ["delivery"],
+          optionIds: ["assembly"],
         },
       ],
     });
@@ -528,13 +739,31 @@ describe("POST /api/orders", () => {
       })
       .onConflictDoNothing();
     await db
+      .insert(catalogServices)
+      .values({
+        id: "windows-okno",
+        categoryId: "windows",
+        label: "Окно",
+        hint: "",
+        icon: "other",
+        sortOrder: 200,
+        isActive: true,
+      })
+      .onConflictDoNothing();
+    await db
       .insert(tariffItems)
       .values({
         id: "window-3",
         category: "windows",
+        serviceId: "windows-okno",
         label: "Окно",
         variantLabel: "3 створки",
+        unit: "шт",
+        parameterLabel: "Количество",
         basePrice: 3000,
+        minValue: 1,
+        maxValue: 10,
+        step: 1,
         isManual: false,
         sortOrder: 200,
         isActive: true,
@@ -591,6 +820,7 @@ describe("POST /api/orders", () => {
     const order = await getPublicOrder(getDb(), data.token);
     expect(order?.totals.total).toBe(0);
     expect(order?.totals.minimumAdjustment).toBe(0);
+    expect(order?.totals.minimumApplied).toBe(0);
     expect(order?.totals.hasManualItems).toBe(true);
   });
 
@@ -669,9 +899,10 @@ describe("POST /api/orders", () => {
           quantity: 1,
           heavySoiling: false,
           secondSide: false,
-          optionIds: ["soiling", "delivery"],
+          optionIds: ["soiling"],
         },
       ],
+      orderOptionIds: ["delivery"],
     });
     const response = await postOrder(payload, [], "10.0.0.22");
     expect(response.status).toBe(201);
@@ -684,6 +915,63 @@ describe("POST /api/orders", () => {
       .where(eq(orders.token, data.token));
     expect(rows[0]?.options?.map((option) => option.id)).toEqual(["soiling"]);
     expect(order?.totals.orderOptionsTotal).toBe(500);
+  });
+
+  it("пишет в снимок услугу, единицу, параметр и количество опции", async () => {
+    const payload = basePayload({
+      items: [
+        {
+          tariffId: "ceiling-matte",
+          parameterValue: 20.5,
+          heavySoiling: false,
+          secondSide: false,
+          optionSelections: [{ id: "corners", quantity: 4 }],
+        },
+      ],
+    });
+    const response = await postOrder(payload, [], "10.0.0.24");
+    expect(response.status).toBe(201);
+    const data = (await response.json()) as { token: string };
+
+    const rows = await getDb()
+      .select({ snapshot: orders.priceSnapshot, breakdown: orders.breakdown })
+      .from(orders)
+      .where(eq(orders.token, data.token))
+      .limit(1);
+    const breakdown = rows[0]!.breakdown;
+    const line = breakdown.lines[0]!;
+
+    expect(line.serviceId).toBe("ceilings-potolok");
+    expect(line.serviceLabel).toBe("Потолок");
+    expect(line.variantId).toBe("ceiling-matte");
+    expect(line.variantLabel).toBe("Матовый");
+    expect(line.unit).toBe("м²");
+    expect(line.parameterValue).toBe(20.5);
+    expect(line.pricePerUnit).toBe(300);
+    expect(line.baseTotal).toBe(6150);
+    expect(line.options?.[0]).toMatchObject({
+      id: "corners",
+      kind: "fixed",
+      value: 200,
+      quantity: 4,
+      amount: 800,
+    });
+    expect(line.lineTotal).toBe(6950);
+    expect(breakdown.itemsSubtotal).toBe(6950);
+    expect(breakdown.minimumApplied).toBe(0);
+    expect(breakdown.orderOptionsTotal).toBe(0);
+    expect(breakdown.total).toBe(6950);
+    expect(breakdown.rules).toEqual({ minOrder: 2500, roundingStep: 10 });
+
+    const snapshot = rows[0]!.snapshot;
+    expect(
+      snapshot.catalogServices?.find(
+        (service) => service.id === "ceilings-potolok",
+      )?.label,
+    ).toBe("Потолок");
+    expect(
+      snapshot.options?.find((option) => option.id === "corners"),
+    ).toMatchObject({ kind: "fixed", value: 200, scope: "line" });
   });
 });
 
