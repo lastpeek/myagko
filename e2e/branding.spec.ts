@@ -70,6 +70,17 @@ test("брендинг: логотип, favicon, PWA, заголовок вкл�
   await expect(manager.getByRole("button", { name: "Заменить" })).toBeEnabled();
   await expect(manager.getByRole("button", { name: "Убрать" })).toBeVisible();
 
+  const firstLogoUrl = await preview.getAttribute("src");
+  const chooserPromise = page.waitForEvent("filechooser");
+  await manager.getByRole("button", { name: "Заменить" }).click();
+  const chooser = await chooserPromise;
+  await chooser.setFiles(photoPath);
+  await expect(preview).toHaveAttribute("src", /^\/api\/logo\?v=/);
+  await expect
+    .poll(() => preview.getAttribute("src"))
+    .not.toBe(firstLogoUrl);
+  await expect(manager.getByRole("button", { name: "Заменить" })).toBeEnabled();
+
   // Публичные файлы: основной и иконки.
   const logoResponse = await page.request.get("/api/logo");
   expect(logoResponse.status()).toBe(200);
