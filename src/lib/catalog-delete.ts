@@ -4,11 +4,17 @@ import type { Database } from "@/lib/db";
 import {
   catalogServices,
   orderItems,
+  priceOptions,
   services,
+  tariffItemOptions,
   tariffItems,
 } from "@/lib/db/schema";
 
-export type CatalogEntityKind = "category" | "service" | "variant";
+export type CatalogEntityKind =
+  | "category"
+  | "service"
+  | "variant"
+  | "option";
 
 export class CatalogDeleteError extends Error {
   readonly status: number;
@@ -48,6 +54,16 @@ export async function setCatalogEntityActive(
       .where(eq(catalogServices.id, id))
       .returning({ id: catalogServices.id });
     if (!updated[0]) throw new CatalogDeleteError("Услуга не найдена", 404);
+    return;
+  }
+
+  if (kind === "option") {
+    const updated = await db
+      .update(priceOptions)
+      .set({ isActive, updatedAt: new Date() })
+      .where(eq(priceOptions.id, id))
+      .returning({ id: priceOptions.id });
+    if (!updated[0]) throw new CatalogDeleteError("Опция не найдена", 404);
     return;
   }
 
@@ -118,6 +134,39 @@ export async function deleteCatalogEntity(
     }
 
     await db.delete(catalogServices).where(eq(catalogServices.id, id));
+    return;
+  }
+
+  if (kind === "option") {
+    const rows = await db
+      .select({
+        id: priceOptions.id,
+        kind: priceOptions.kind,
+        isActive: priceOptions.isActive,
+      })
+      .from(priceOptions)
+      .where(eq(priceOptions.id, id))
+      .limit(1);
+    if (!rows[0]) throw new CatalogDeleteError("Опция не найдена", 404);
+
+    if (rows[0].kind === "fixed_order" && rows[0].isActive) {
+      throw new CatalogDeleteError(
+        "Опция действует на весь заказ. Снимите «Доступна для привязки», чтобы скрыть её.",
+      );
+    }
+
+    const used = await db
+      .select({ itemId: tariffItemOptions.itemId })
+      .from(tariffItemOptions)
+      .where(eq(tariffItemOptions.optionId, id))
+      .limit(1);
+    if (used[0]) {
+      throw new CatalogDeleteError(
+        "Опция используется в вариантах. Снимите «Доступна для привязки», чтобы скрыть её.",
+      );
+    }
+
+    await db.delete(priceOptions).where(eq(priceOptions.id, id));
     return;
   }
 

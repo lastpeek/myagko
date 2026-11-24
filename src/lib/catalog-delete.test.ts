@@ -10,6 +10,7 @@ import {
   catalogServices,
   orderItems,
   orders,
+  priceOptions,
   services,
 } from "@/lib/db/schema";
 import { seedDatabase } from "@/lib/seed-data";
@@ -95,6 +96,55 @@ describe("удаление справочников", () => {
     await expect(
       deleteCatalogEntity(getDb(), "variant", "sofa-3"),
     ).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("не удаляет опцию из варианта, а неиспользуемую удаляет", async () => {
+    await expect(
+      deleteCatalogEntity(getDb(), "option", "soiling"),
+    ).rejects.toMatchObject({ status: 409 });
+
+    const db = getDb();
+    await db
+      .insert(priceOptions)
+      .values({
+        id: "free-option",
+        label: "Свободная",
+        kind: "percent",
+        value: 10,
+        scope: "line",
+        sortOrder: 900,
+        isActive: true,
+      })
+      .onConflictDoNothing();
+
+    await deleteCatalogEntity(db, "option", "free-option");
+    const rows = await db
+      .select({ id: priceOptions.id })
+      .from(priceOptions)
+      .where(eq(priceOptions.id, "free-option"));
+    expect(rows).toHaveLength(0);
+
+    await db
+      .insert(priceOptions)
+      .values({
+        id: "active-order-option",
+        label: "За заказ",
+        kind: "fixed_order",
+        value: 500,
+        scope: "order",
+        sortOrder: 910,
+        isActive: true,
+      })
+      .onConflictDoNothing();
+    await expect(
+      deleteCatalogEntity(db, "option", "active-order-option"),
+    ).rejects.toMatchObject({ status: 409 });
+
+    await db
+      .update(priceOptions)
+      .set({ isActive: false })
+      .where(eq(priceOptions.id, "active-order-option"));
+    await deleteCatalogEntity(db, "option", "active-order-option");
   });
 
   it("удаляет вариант, услугу и категорию без ссылок", async () => {

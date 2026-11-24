@@ -8,6 +8,7 @@ import {
   ArrowUpIcon,
   CheckIcon,
   ChevronRightIcon,
+  CloseIcon,
   PlusIcon,
   SpinnerIcon,
   TrashIcon,
@@ -120,6 +121,11 @@ function toPricingOption(option: AdminOption): PricingOption {
   };
 }
 
+function optionValueLabel(kind: AdminOption["kind"], value: number): string {
+  if (kind === "percent") return `${value} %`;
+  return `${formatRub(value)} ${kind === "fixed" ? "за штуку" : "за заказ"}`;
+}
+
 export function ServicePricingManager({
   categories: initialCategories,
   services: initialServices,
@@ -147,6 +153,7 @@ export function ServicePricingManager({
   const [openCategoryId, setOpenCategoryId] = useState("");
   const [openServiceId, setOpenServiceId] = useState("");
   const [openVariantId, setOpenVariantId] = useState("");
+  const [showUnusedOptions, setShowUnusedOptions] = useState(false);
 
   const lineOptions = options.filter((option) => option.kind !== "fixed_order");
   const orderOptions = options.filter(
@@ -352,6 +359,12 @@ export function ServicePricingManager({
   }
 
   function addOption() {
+    if (openCategoryId) {
+      setOpenCategoryId("");
+      setOpenServiceId("");
+      setOpenVariantId("");
+    }
+    setShowUnusedOptions(true);
     setOptions((current) => [
       ...current,
       {
@@ -366,8 +379,51 @@ export function ServicePricingManager({
     ]);
   }
 
+  function attachOption(variantId: string, optionId: string) {
+    setVariants((current) =>
+      current.map((variant) =>
+        variant.id === variantId && !variant.optionIds.includes(optionId)
+          ? { ...variant, optionIds: [...variant.optionIds, optionId] }
+          : variant,
+      ),
+    );
+  }
+
+  function detachOption(variantId: string, optionId: string) {
+    setVariants((current) =>
+      current.map((variant) =>
+        variant.id === variantId
+          ? {
+              ...variant,
+              optionIds: variant.optionIds.filter((id) => id !== optionId),
+            }
+          : variant,
+      ),
+    );
+  }
+
+  function createOptionForVariant(
+    variantId: string,
+    input: { label: string; kind: "percent" | "fixed"; value: number },
+  ) {
+    const id = newId("new-opt");
+    setOptions((current) => [
+      ...current,
+      {
+        id,
+        label: input.label,
+        kind: input.kind,
+        value: input.value,
+        scope: "line",
+        sortOrder: current.length * 10 + 10,
+        isActive: true,
+      },
+    ]);
+    attachOption(variantId, id);
+  }
+
   async function deleteEntity(
-    kind: "category" | "service" | "variant",
+    kind: "category" | "service" | "variant" | "option",
     id: string,
   ) {
     setNotice(null);
@@ -409,6 +465,14 @@ export function ServicePricingManager({
           current.filter((entry) => entry.serviceId !== id),
         );
         setServices((current) => current.filter((entry) => entry.id !== id));
+      } else if (kind === "option") {
+        setOptions((current) => current.filter((entry) => entry.id !== id));
+        setVariants((current) =>
+          current.map((entry) => ({
+            ...entry,
+            optionIds: entry.optionIds.filter((optionId) => optionId !== id),
+          })),
+        );
       } else {
         setVariants((current) => current.filter((entry) => entry.id !== id));
       }
@@ -623,6 +687,15 @@ export function ServicePricingManager({
             }
             onChange={(patch) => updateVariant(variant.id, patch)}
             onDelete={() => void deleteEntity("variant", variant.id)}
+            onAttachOption={(optionId) =>
+              attachOption(variant.id, optionId)
+            }
+            onDetachOption={(optionId) =>
+              detachOption(variant.id, optionId)
+            }
+            onCreateOption={(input) =>
+              createOptionForVariant(variant.id, input)
+            }
             dragHandle={dragHandle("variant", variant.id)}
             orderButtons={orderButtons(
               "variant",
@@ -642,6 +715,169 @@ export function ServicePricingManager({
       </div>
     );
   }
+
+  function variantTitle(variant: AdminVariant): string {
+    const service = services.find((entry) => entry.id === variant.serviceId);
+    return `${service?.label ?? variant.label} · ${variant.variantLabel}`;
+  }
+
+  function optionUsageNames(
+    option: AdminOption,
+    categoryId?: string,
+  ): string[] {
+    if (option.kind === "fixed_order") {
+      return option.isActive ? ["весь заказ"] : [];
+    }
+    return variants
+      .filter(
+        (variant) =>
+          variant.optionIds.includes(option.id) &&
+          (!categoryId ||
+            (services.find((service) => service.id === variant.serviceId)
+              ?.categoryId ?? variant.category) === categoryId),
+      )
+      .map(variantTitle);
+  }
+
+  function optionUsageText(option: AdminOption, categoryId?: string): string {
+    const names = optionUsageNames(option, categoryId);
+    if (names.length === 0) return "Не используется ни в одном варианте";
+    if (names.length <= 3) return names.join(", ");
+    return `${names.slice(0, 3).join(", ")} и ещё ${names.length - 3}`;
+  }
+
+  const openCategory = categories.find(
+    (category) => category.id === openCategoryId,
+  );
+
+  function optionRow(option: AdminOption) {
+    const usageCategory = openCategory?.id;
+    const used = optionUsageNames(option, usageCategory).length > 0;
+    return (
+      <div
+        key={option.id}
+        data-testid="option-card"
+        data-option-id={option.id}
+        data-drop-kind="option"
+        data-drop-id={option.id}
+        className="rounded-[12px] border border-line px-2.5 py-2"
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          {dragHandle("option", option.id)}
+          <input
+            value={option.label}
+            onChange={(event) =>
+              updateOption(option.id, { label: event.target.value })
+            }
+            aria-label={`Название опции: ${option.label}`}
+            className="input h-9 min-w-[140px] flex-1 text-[13px]"
+          />
+          <div
+            className="flex flex-none flex-wrap gap-1"
+            role="group"
+            aria-label={`Вид опции: ${option.label}`}
+          >
+            {(
+              [
+                ["percent", "Процент"],
+                ["fixed", "За штуку"],
+                ["fixed_order", "За заказ"],
+              ] as const
+            ).map(([kind, label]) => (
+              <button
+                key={kind}
+                type="button"
+                aria-pressed={option.kind === kind}
+                onClick={() => updateOption(option.id, { kind })}
+                className={`min-h-9 rounded-[9px] border px-2.5 text-[12px] ${
+                  option.kind === kind
+                    ? "border-accent bg-accent-soft text-accent-ink"
+                    : "border-line text-ink-2 hover:border-line-strong"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              min={0}
+              value={option.value}
+              onChange={(event) =>
+                updateOption(option.id, {
+                  value: Math.max(0, Number(event.target.value) || 0),
+                })
+              }
+              aria-label={`Значение опции: ${option.label}`}
+              className="input h-9 w-[92px] tabular text-right text-[12.5px]"
+            />
+            <span className="whitespace-nowrap text-[11.5px] text-ink-3">
+              {option.kind === "percent"
+                ? "%"
+                : option.kind === "fixed"
+                  ? "₽ за штуку"
+                  : "₽ за заказ"}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => void deleteEntity("option", option.id)}
+            aria-label={`Удалить опцию: ${option.label}`}
+            title="Удалить"
+            className="grid h-9 w-9 flex-none place-items-center rounded-[8px] text-ink-3 hover:bg-surface-2 hover:text-danger"
+          >
+            <TrashIcon className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 pl-7">
+          <p className="min-w-0 flex-1 text-[11.5px] leading-4 text-ink-3">
+            <span className="font-medium text-ink-2">Используется в:</span>{" "}
+            {used
+              ? optionUsageText(option, usageCategory)
+              : "Не используется ни в одном варианте"}
+            {!option.isActive ? " · недоступна" : ""}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 text-[12px] text-ink-2">
+              <input
+                type="checkbox"
+                checked={option.isActive}
+                onChange={(event) =>
+                  updateOption(option.id, {
+                    isActive: event.target.checked,
+                  })
+                }
+                className="h-4 w-4 accent-[var(--accent)]"
+              />
+              Доступна для привязки
+            </label>
+            {orderButtons("option", option.id, option.label)}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const visibleOptions = openCategory
+    ? options.filter((option) =>
+        variants.some(
+          (variant) =>
+            (services.find((service) => service.id === variant.serviceId)
+              ?.categoryId ?? variant.category) === openCategory.id &&
+            variant.optionIds.includes(option.id),
+        ),
+      )
+    : options;
+  const usedOptions = visibleOptions.filter(
+    (option) => optionUsageNames(option).length > 0,
+  );
+  const unusedOptions = openCategory
+    ? []
+    : visibleOptions.filter(
+        (option) => optionUsageNames(option).length === 0,
+      );
 
   return (
     <div className="grid gap-4">
@@ -1045,89 +1281,84 @@ export function ServicePricingManager({
             Опция
           </button>
         </div>
-        <p className="caption mt-1">
-          `percent` и `fixed` можно привязать к варианту. `fixed_order` действует
-          на весь заказ.
+        <p className="caption mt-1 max-w-[68ch]">
+          Доплаты, которые можно включать в вариантах. Сами по себе ни на что не
+          влияют.
         </p>
-        <div className="mt-3 grid gap-2">
-          {options.map((option) => (
-            <div
-              key={option.id}
-              data-drop-kind="option"
-              data-drop-id={option.id}
-              className="flex flex-wrap items-center gap-2 rounded-[12px] border border-line px-2.5 py-2"
+
+        {openCategory ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-[10px] border border-line bg-surface-2/50 px-3 py-2 text-[12px] text-ink-2">
+            Показаны опции категории «{openCategory.label}»
+            <button
+              type="button"
+              onClick={() => {
+                setOpenCategoryId("");
+                setOpenServiceId("");
+                setOpenVariantId("");
+              }}
+              className="btn-small ml-auto flex-none"
             >
-              {dragHandle("option", option.id)}
-              <input
-                value={option.label}
-                onChange={(event) =>
-                  updateOption(option.id, { label: event.target.value })
-                }
-                aria-label={`Название опции: ${option.label}`}
-                className="input h-9 min-w-[150px] flex-1 text-[13px]"
-              />
-              <div
-                className="flex flex-none flex-wrap gap-1"
-                role="group"
-                aria-label={`Вид опции: ${option.label}`}
-              >
-                {(
-                  [
-                    ["percent", "Процент"],
-                    ["fixed", "За штуку"],
-                    ["fixed_order", "За заказ"],
-                  ] as const
-                ).map(([kind, label]) => (
-                  <button
-                    key={kind}
-                    type="button"
-                    aria-pressed={option.kind === kind}
-                    onClick={() => updateOption(option.id, { kind })}
-                    className={`min-h-9 rounded-[9px] border px-2.5 text-[12px] ${
-                      option.kind === kind
-                        ? "border-accent bg-accent-soft text-accent-ink"
-                        : "border-line text-ink-2 hover:border-line-strong"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
+              Показать все
+            </button>
+          </div>
+        ) : null}
+
+        {options.length === 0 ? (
+          <p className="caption mt-3">Пока нет опций.</p>
+        ) : (
+          <div className="mt-3 grid gap-3">
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-[11.5px] font-semibold uppercase tracking-[0.04em] text-ink-2">
+                  Используются
+                </h3>
+                <span className="caption tabular">{usedOptions.length}</span>
               </div>
-              <input
-                type="number"
-                min={0}
-                value={option.value}
-                onChange={(event) =>
-                  updateOption(option.id, {
-                    value: Math.max(0, Number(event.target.value) || 0),
-                  })
-                }
-                aria-label={`Значение опции: ${option.label}`}
-                className="input h-9 w-[110px] tabular text-right text-[12.5px]"
-              />
-              <span className="text-[11.5px] text-ink-3">
-                {option.kind === "percent" ? "%" : "₽"}
-              </span>
-              <label className="flex items-center gap-2 text-[12px] text-ink-2">
-                <input
-                  type="checkbox"
-                  checked={option.isActive}
-                  onChange={(event) =>
-                    updateOption(option.id, {
-                      isActive: event.target.checked,
-                    })
-                  }
-                  className="h-4 w-4 accent-[var(--accent)]"
-                />
-                Показывать на сайте
-              </label>
-              {orderButtons("option", option.id, option.label)}
+              <div data-testid="options-used" className="mt-2 grid gap-2">
+                {usedOptions.map((option) => optionRow(option))}
+                {usedOptions.length === 0 ? (
+                  <p className="caption">
+                    {openCategory
+                      ? "У вариантов этой категории пока нет опций."
+                      : "Пока нет используемых опций."}
+                  </p>
+                ) : null}
+              </div>
             </div>
-          ))}
-          {options.length === 0 ? (
-            <p className="caption">Пока нет опций.</p>
-          ) : null}
-        </div>
+
+            {openCategory ? null : (
+              <div data-testid="options-unused" className="border-t border-line pt-3">
+                <button
+                  type="button"
+                  onClick={() => setShowUnusedOptions((current) => !current)}
+                  aria-expanded={showUnusedOptions}
+                  className="flex w-full items-center gap-2 text-left"
+                >
+                  <ChevronRightIcon
+                    className={`h-4 w-4 flex-none text-ink-3 transition-transform duration-150 ${
+                      showUnusedOptions ? "rotate-90" : ""
+                    }`}
+                  />
+                  <span className="text-[11.5px] font-semibold uppercase tracking-[0.04em] text-ink-2">
+                    Не используются
+                  </span>
+                  <span className="caption tabular">{unusedOptions.length}</span>
+                </button>
+                {showUnusedOptions ? (
+                  <div
+                    data-testid="unused-options-list"
+                    className="mt-2 grid gap-2"
+                  >
+                    {unusedOptions.map((option) => optionRow(option))}
+                    {unusedOptions.length === 0 ? (
+                      <p className="caption">Все опции используются.</p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       <section className="card p-4 md:p-5" aria-labelledby="rules-title">
@@ -1390,6 +1621,9 @@ function VariantEditor({
   onToggle,
   onChange,
   onDelete,
+  onAttachOption,
+  onDetachOption,
+  onCreateOption,
   dragHandle,
   orderButtons,
 }: {
@@ -1400,9 +1634,29 @@ function VariantEditor({
   onToggle: () => void;
   onChange: (patch: Partial<AdminVariant>) => void;
   onDelete: () => void;
+  onAttachOption: (optionId: string) => void;
+  onDetachOption: (optionId: string) => void;
+  onCreateOption: (input: {
+    label: string;
+    kind: "percent" | "fixed";
+    value: number;
+  }) => void;
   dragHandle: React.ReactNode;
   orderButtons: React.ReactNode;
 }) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newLabel, setNewLabel] = useState("");
+  const [newKind, setNewKind] = useState<"percent" | "fixed">("percent");
+  const [newValue, setNewValue] = useState(0);
+
+  const attachedOptions = lineOptions.filter((option) =>
+    variant.optionIds.includes(option.id),
+  );
+  const availableOptions = lineOptions.filter(
+    (option) => option.isActive && !variant.optionIds.includes(option.id),
+  );
+
   return (
     <div
       data-testid="variant-card"
@@ -1607,45 +1861,181 @@ function VariantEditor({
             </label>
           </div>
 
-          {!variant.isManual && lineOptions.length > 0 ? (
+          {!variant.isManual ? (
             <div>
-              <div className="label mb-1.5 text-ink-2">Опции варианта</div>
-              <div className="flex flex-wrap gap-2">
-                {lineOptions.map((option) => {
-                  const checked = variant.optionIds.includes(option.id);
-                  return (
-                    <label
-                      key={option.id}
-                      className={`flex min-h-10 items-center gap-2 rounded-[10px] border px-3 text-[12.5px] ${
-                        checked
-                          ? "border-accent bg-accent-soft"
-                          : "border-line"
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(event) =>
-                          onChange({
-                            optionIds: event.target.checked
-                              ? [...variant.optionIds, option.id]
-                              : variant.optionIds.filter(
-                                  (id) => id !== option.id,
-                                ),
-                          })
-                        }
-                        className="h-4 w-4 accent-[var(--accent)]"
-                      />
-                      {option.label}
-                      <span className="text-ink-3">
-                        {option.kind === "percent"
-                          ? `+${option.value}%`
-                          : `+${formatRub(option.value)}`}
-                      </span>
-                    </label>
-                  );
-                })}
+              <div className="label mb-1.5 text-ink-2">
+                Доплаты этого варианта
               </div>
+              <div data-testid="variant-options" className="grid gap-2">
+                {attachedOptions.length > 0 ? (
+                  attachedOptions.map((option) => (
+                    <div
+                      key={option.id}
+                      className="flex flex-wrap items-center gap-2 rounded-[10px] border border-line px-2.5 py-2"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <span className="block truncate text-[12.5px] font-medium">
+                          {option.label}
+                        </span>
+                        <span className="caption block">
+                          +{optionValueLabel(option.kind, option.value)}
+                          {option.isActive ? "" : " · недоступна"}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onDetachOption(option.id)}
+                        aria-label={`Убрать доплату: ${option.label}`}
+                        title="Убрать из варианта"
+                        className="grid h-8 w-8 flex-none place-items-center rounded-[8px] text-ink-3 hover:bg-surface-2 hover:text-danger"
+                      >
+                        <CloseIcon className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <p className="caption">Пока нет доплат.</p>
+                )}
+              </div>
+
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPickerOpen((current) => !current);
+                    setCreateOpen(false);
+                  }}
+                  aria-expanded={pickerOpen}
+                  className="btn btn-secondary h-9 w-auto px-3 text-[12.5px]"
+                >
+                  <PlusIcon className="h-4 w-4" />
+                  Добавить из справочника
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCreateOpen((current) => !current);
+                    setPickerOpen(false);
+                  }}
+                  aria-expanded={createOpen}
+                  className="btn btn-ghost h-9 w-auto px-3 text-[12.5px]"
+                >
+                  <PlusIcon className="h-4 w-4" />
+                  Создать новую
+                </button>
+              </div>
+
+              {pickerOpen ? (
+                <div className="mt-2 grid gap-1.5 rounded-[10px] border border-line bg-surface-2/40 p-2">
+                  {availableOptions.length > 0 ? (
+                    availableOptions.map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => {
+                          onAttachOption(option.id);
+                          setPickerOpen(false);
+                        }}
+                        className="flex min-h-10 flex-wrap items-center gap-2 rounded-[8px] border border-line bg-surface px-2.5 py-1.5 text-left text-[12.5px] hover:border-accent hover:bg-accent-soft"
+                      >
+                        <span className="min-w-0 flex-1 truncate font-medium">
+                          {option.label}
+                        </span>
+                        <span className="text-ink-3">
+                          +{optionValueLabel(option.kind, option.value)}
+                        </span>
+                      </button>
+                    ))
+                  ) : (
+                    <p className="caption px-1">
+                      Все доступные доплаты уже добавлены.
+                    </p>
+                  )}
+                </div>
+              ) : null}
+
+              {createOpen ? (
+                <div className="mt-2 grid gap-2 rounded-[10px] border border-line bg-surface-2/40 p-2.5">
+                  <input
+                    value={newLabel}
+                    onChange={(event) => setNewLabel(event.target.value)}
+                    aria-label="Название новой доплаты"
+                    placeholder="Например, пятна от чая"
+                    className="input h-9 w-full text-[13px]"
+                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap gap-1">
+                      {(
+                        [
+                          ["percent", "Процент"],
+                          ["fixed", "За штуку"],
+                        ] as const
+                      ).map(([kind, label]) => (
+                        <button
+                          key={kind}
+                          type="button"
+                          aria-pressed={newKind === kind}
+                          onClick={() => setNewKind(kind)}
+                          className={`min-h-9 rounded-[9px] border px-2.5 text-[12px] ${
+                            newKind === kind
+                              ? "border-accent bg-accent-soft text-accent-ink"
+                              : "border-line text-ink-2 hover:border-line-strong"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        min={0}
+                        value={newValue}
+                        onChange={(event) =>
+                          setNewValue(
+                            Math.max(0, Number(event.target.value) || 0),
+                          )
+                        }
+                        aria-label="Значение новой доплаты"
+                        className="input h-9 w-[92px] tabular text-right text-[12.5px]"
+                      />
+                      <span className="whitespace-nowrap text-[11.5px] text-ink-3">
+                        {newKind === "percent" ? "%" : "₽ за штуку"}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={!newLabel.trim()}
+                      onClick={() => {
+                        onCreateOption({
+                          label: newLabel.trim(),
+                          kind: newKind,
+                          value:
+                            newKind === "percent"
+                              ? Math.min(500, newValue)
+                              : newValue,
+                        });
+                        setNewLabel("");
+                        setNewValue(0);
+                        setNewKind("percent");
+                        setCreateOpen(false);
+                      }}
+                      className="btn-small"
+                    >
+                      Создать и добавить
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCreateOpen(false)}
+                      className="btn btn-ghost h-9 w-auto px-3 text-[12.5px]"
+                    >
+                      Отмена
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
           <p className="caption">

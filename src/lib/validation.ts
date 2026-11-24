@@ -440,7 +440,7 @@ export const updateTariffsSchema = z
 export type UpdateTariffsInput = z.infer<typeof updateTariffsSchema>;
 
 export const catalogDeleteSchema = z.object({
-  kind: z.enum(["category", "service", "variant"]),
+  kind: z.enum(["category", "service", "variant", "option"]),
   id: z.string().trim().min(1).max(64),
 });
 
