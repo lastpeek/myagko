@@ -113,6 +113,7 @@ export default async function AttributionPage() {
         city={company.city}
         phone={phone}
         email={company.email}
+        territory={company.territory}
       />
     </>
   );

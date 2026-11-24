@@ -69,7 +69,24 @@ export async function POST(request: Request) {
     const created = await createGalleryPhotos(db, normalized);
     revalidatePath("/");
     revalidatePath("/admin/gallery");
-    return json({ ok: true, count: created.length }, 201);
+    return json(
+      {
+        ok: true,
+        count: created.length,
+        photos: created.map((photo) => ({
+          id: photo.id,
+          caption: photo.caption,
+          isVisible: photo.isVisible,
+          previewUrl: `/api/admin/gallery/${photo.id}/file`,
+          hasBefore: Boolean(photo.beforeStorageKey),
+          beforePreviewUrl: photo.beforeStorageKey
+            ? `/api/admin/gallery/${photo.id}/before/file`
+            : null,
+          createdAt: photo.createdAt.toISOString(),
+        })),
+      },
+      201,
+    );
   } catch (error) {
     if (error instanceof GalleryError) {
       return apiError(error.message, 400);

@@ -301,7 +301,6 @@ test("клиент собирает заказ, владелец согласу�
   await page
     .getByRole("button", { name: "Открыть категорию: Диваны" })
     .click();
-  await page.getByRole("button", { name: "Открыть услугу: Диван" }).click();
   await page
     .getByRole("button", { name: "Открыть вариант: 2 места" })
     .click();

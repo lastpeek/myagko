@@ -8,6 +8,7 @@ import { Logo } from "@/components/logo";
 import { OrderRefresher } from "@/components/order-refresher";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { getCompany } from "@/lib/company";
+import { territoryLabel } from "@/lib/company-text";
 import { getDb } from "@/lib/db";
 import { formatDate, formatRub, formatTimeRange } from "@/lib/format";
 import { getPublicOrder } from "@/lib/orders";
@@ -306,7 +307,7 @@ export default async function OrderPage({
 
         <div className="mt-6 border-t border-line pt-4 text-[11.5px] leading-4 text-ink-3">
           <MapPinIcon className="mr-1 inline h-3.5 w-3.5 align-[-2px]" />
-          {company.city} · {company.territory}
+          {territoryLabel(company.city, company.territory)}
         </div>
       </main>
     </div>

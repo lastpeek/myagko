@@ -30,6 +30,21 @@ test("галерея работ: загрузка, порядок, скрыти�
 
   await page.getByRole("link", { name: "Работы" }).click();
   await expect(page.getByRole("heading", { name: "Работы", level: 1 })).toBeVisible();
+
+  while ((await page.locator("article[data-photo-id]").count()) > 0) {
+    const count = await page.locator("article[data-photo-id]").count();
+    await page
+      .locator("article[data-photo-id]")
+      .first()
+      .getByRole("button", { name: "Удалить фото" })
+      .click();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Удалить", exact: true })
+      .click();
+    await expect(page.locator("article[data-photo-id]")).toHaveCount(count - 1);
+  }
+
   await expect(page.getByText("Пока нет работ")).toBeVisible();
   await expect(
     page.getByText("Добавьте 3–5 фото — блок появится на сайте."),
@@ -45,6 +60,13 @@ test("галерея работ: загрузка, порядок, скрыти�
   const cards = page.locator("article[data-photo-id]");
   await expect(cards).toHaveCount(3);
   await expect(page.getByText("3 / 24")).toBeVisible();
+  await expect(cards.first().getByText("Фото после чистки")).toBeVisible();
+  await expect(
+    cards.first().getByText("Фото до чистки — необязательно"),
+  ).toBeVisible();
+  await expect(
+    cards.first().getByText("Обязательно", { exact: true }),
+  ).toBeVisible();
   await page.screenshot({
     path: "test-results/screens/admin-gallery-390.png",
     fullPage: true,
@@ -189,7 +211,7 @@ test("галерея работ: загрузка, порядок, скрыти�
     .click();
 
   await expect(page.locator("article[data-photo-id]")).toHaveCount(2);
-  expect(uploadCount()).toBe(filesBefore - 1);
+  await expect.poll(() => uploadCount()).toBe(filesBefore - 1);
 
   // Пустое состояние скрывает секцию
   for (let index = 0; index < 2; index += 1) {
@@ -206,7 +228,7 @@ test("галерея работ: загрузка, порядок, скрыти�
   }
 
   await expect(page.getByText("Пока нет работ")).toBeVisible();
-  expect(uploadCount()).toBe(0);
+  await expect.poll(() => uploadCount()).toBe(0);
 
   await page.goto("/");
   await expect(
@@ -328,7 +350,7 @@ test("сравнение до/после: drag, клавиатура, лайтб
     { name: "plain-after.png", mimeType: "image/png", buffer },
   ]);
   await expect(page.locator("article[data-photo-id]")).toHaveCount(2);
-  expect(uploadCount()).toBe(2);
+  await expect.poll(() => uploadCount()).toBe(2);
 
   const firstCard = page.locator("article[data-photo-id]").first();
   await firstCard
@@ -337,7 +359,7 @@ test("сравнение до/после: drag, клавиатура, лайтб
 
   await expect(firstCard.getByText("до/после", { exact: true })).toBeVisible();
   await expect(firstCard.getByRole("button", { name: "Убрать фото до" })).toBeVisible();
-  expect(uploadCount()).toBe(3);
+  await expect.poll(() => uploadCount()).toBe(3);
   await page.screenshot({
     path: "test-results/screens/admin-gallery-compare-390.png",
     fullPage: true,
@@ -481,7 +503,7 @@ test("сравнение до/после: drag, клавиатура, лайтб
     .getByRole("button", { name: "Удалить", exact: true })
     .click();
   await expect(page.locator("article[data-photo-id]")).toHaveCount(1);
-  expect(uploadCount()).toBe(1);
+  await expect.poll(() => uploadCount()).toBe(1);
 
   await page
     .locator("article[data-photo-id]")
@@ -493,7 +515,7 @@ test("сравнение до/после: drag, клавиатура, лайтб
     .getByRole("button", { name: "Удалить", exact: true })
     .click();
   await expect(page.getByText("Пока нет работ")).toBeVisible();
-  expect(uploadCount()).toBe(0);
+  await expect.poll(() => uploadCount()).toBe(0);
 
   await page.goto("/");
   await expect(
@@ -535,7 +557,7 @@ test("убрать фото до возвращает обычную карти�
     .getByLabel("Загрузить фото до")
     .setInputFiles({ name: "single-before.png", mimeType: "image/png", buffer });
   await expect(card.getByText("до/после", { exact: true })).toBeVisible();
-  expect(uploadCount()).toBe(2);
+  await expect.poll(() => uploadCount()).toBe(2);
 
   await page.goto("/");
   await expect(
@@ -549,7 +571,7 @@ test("убрать фото до возвращает обычную карти�
     .getByRole("button", { name: "Убрать фото до" })
     .click();
   await expect(page.locator("article[data-photo-id]").first().getByText("до/после")).toHaveCount(0);
-  expect(uploadCount()).toBe(1);
+  await expect.poll(() => uploadCount()).toBe(1);
 
   await page.goto("/");
   await expect(
@@ -571,5 +593,5 @@ test("убрать фото до возвращает обычную карти�
     .getByRole("button", { name: "Удалить", exact: true })
     .click();
   await expect(page.getByText("Пока нет работ")).toBeVisible();
-  expect(uploadCount()).toBe(0);
+  await expect.poll(() => uploadCount()).toBe(0);
 });

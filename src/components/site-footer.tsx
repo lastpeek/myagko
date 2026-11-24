@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { CopyEmail } from "@/components/copy-email";
 import { Logo } from "@/components/logo";
 import { formatPhone, phoneHref } from "@/lib/phone";
 
@@ -8,11 +9,13 @@ export function SiteFooter({
   city,
   phone,
   email,
+  territory,
 }: {
   name: string;
   city: string;
   phone: string;
   email: string;
+  territory: string;
 }) {
   const phoneText = formatPhone(phone);
   return (
@@ -24,7 +27,7 @@ export function SiteFooter({
             <span className="text-[15px] font-semibold">{name}</span>
           </div>
           <p className="small mt-3 max-w-[36ch] text-ink-2">
-            Услуги на выезде. {city} и пригород.
+            Услуги на выезде. {territory.trim() || `${city} и пригород`}
           </p>
         </div>
 
@@ -34,9 +37,7 @@ export function SiteFooter({
             <a className="link w-fit" href={phoneHref(phone)}>
               {phoneText}
             </a>
-            <a className="link w-fit" href={`mailto:${email}`}>
-              {email}
-            </a>
+            <CopyEmail email={email} />
           </div>
         </div>
 

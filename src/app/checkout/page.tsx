@@ -43,6 +43,7 @@ export default async function CheckoutPage() {
         city={company.city}
         phone={normalized}
         email={company.email}
+        territory={company.territory}
       />
     </>
   );

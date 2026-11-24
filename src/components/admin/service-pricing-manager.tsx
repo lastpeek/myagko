@@ -605,6 +605,44 @@ export function ServicePricingManager({
     );
   }
 
+  function variantList(categoryId: string, service: AdminCatalogService) {
+    const serviceVariants = variants.filter(
+      (variant) => variant.serviceId === service.id,
+    );
+    return (
+      <div className="grid gap-2">
+        {serviceVariants.map((variant) => (
+          <VariantEditor
+            key={variant.id}
+            variant={variant}
+            service={service}
+            lineOptions={lineOptions}
+            open={openVariantId === variant.id}
+            onToggle={() =>
+              toggleVariant(categoryId, service.id, variant.id)
+            }
+            onChange={(patch) => updateVariant(variant.id, patch)}
+            onDelete={() => void deleteEntity("variant", variant.id)}
+            dragHandle={dragHandle("variant", variant.id)}
+            orderButtons={orderButtons(
+              "variant",
+              variant.id,
+              variant.variantLabel,
+            )}
+          />
+        ))}
+        <button
+          type="button"
+          onClick={() => addVariant(service)}
+          className="btn btn-ghost h-9 w-auto justify-self-start px-3 text-[12.5px]"
+        >
+          <PlusIcon className="h-4 w-4" />
+          Вариант
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="grid gap-4">
       {notice ? (
@@ -641,6 +679,10 @@ export function ServicePricingManager({
         <p className="caption max-w-[52ch]">
           Дерево: категория → услуга → вариант. Перетаскивайте строки или
           используйте стрелки. Скрытая запись не исчезает из старых заявок.
+        </p>
+        <p className="caption w-full max-w-[62ch]">
+          Услуга — тип работ внутри категории. Если он один, создавать не нужно:
+          категория показывается как услуга.
         </p>
       </div>
 
@@ -762,10 +804,94 @@ export function ServicePricingManager({
 
             {categoryOpen ? (
               <div className="grid gap-3 px-3 py-3">
-                {categoryServices.map((service) => {
-                  const serviceVariants = variants.filter(
-                    (variant) => variant.serviceId === service.id,
-                  );
+                {categoryServices.length === 1 ? (
+                  <>
+                    {(() => {
+                      const service = categoryServices[0]!;
+                      return (
+                        <div
+                          data-testid="single-service-card"
+                          className="rounded-[14px] border border-line p-3"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="label text-ink-2">
+                              Услуга в категории
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <label className="flex min-h-8 items-center gap-2 text-[12px] text-ink-2">
+                                <input
+                                  type="checkbox"
+                                  checked={service.isActive}
+                                  onChange={(event) =>
+                                    updateService(service.id, {
+                                      isActive: event.target.checked,
+                                    })
+                                  }
+                                  className="h-4 w-4 accent-[var(--accent)]"
+                                />
+                                Показывать на сайте
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void deleteEntity("service", service.id)
+                                }
+                                aria-label={`Удалить услугу: ${service.label}`}
+                                title="Удалить услугу"
+                                className="grid h-8 w-8 place-items-center rounded-[8px] text-ink-3 hover:bg-surface-2 hover:text-danger"
+                              >
+                                <TrashIcon className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </div>
+                          <div className="mt-2 grid gap-2 min-[900px]:grid-cols-2">
+                            <div>
+                              <label
+                                htmlFor={`svc-name-${service.id}`}
+                                className="label mb-1 block text-ink-2"
+                              >
+                                Название услуги
+                              </label>
+                              <input
+                                id={`svc-name-${service.id}`}
+                                value={service.label}
+                                onChange={(event) =>
+                                  updateService(service.id, {
+                                    label: event.target.value,
+                                  })
+                                }
+                                aria-label={`Название услуги: ${service.label}`}
+                                className="input h-9 w-full text-[13.5px] font-medium"
+                              />
+                            </div>
+                            <div>
+                              <label
+                                htmlFor={`svc-hint-${service.id}`}
+                                className="label mb-1 block text-ink-2"
+                              >
+                                Подпись услуги
+                              </label>
+                              <input
+                                id={`svc-hint-${service.id}`}
+                                value={service.hint}
+                                onChange={(event) =>
+                                  updateService(service.id, {
+                                    hint: event.target.value,
+                                  })
+                                }
+                                aria-label={`Подпись услуги: ${service.label}`}
+                                placeholder="Короткая подпись"
+                                className="input h-9 w-full text-[12.5px]"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    {variantList(category.id, categoryServices[0]!)}
+                  </>
+                ) : (
+                  categoryServices.map((service) => {
                   const serviceOpen = openServiceId === service.id;
                   return (
                     <div
@@ -883,49 +1009,15 @@ export function ServicePricingManager({
                               />
                             </div>
                           </div>
-                          <div className="mt-3 grid gap-2">
-                            {serviceVariants.map((variant) => (
-                              <VariantEditor
-                                key={variant.id}
-                                variant={variant}
-                                service={service}
-                                lineOptions={lineOptions}
-                                open={openVariantId === variant.id}
-                                onToggle={() =>
-                                  toggleVariant(
-                                    category.id,
-                                    service.id,
-                                    variant.id,
-                                  )
-                                }
-                                onChange={(patch) =>
-                                  updateVariant(variant.id, patch)
-                                }
-                                onDelete={() =>
-                                  void deleteEntity("variant", variant.id)
-                                }
-                                dragHandle={dragHandle("variant", variant.id)}
-                                orderButtons={orderButtons(
-                                  "variant",
-                                  variant.id,
-                                  variant.variantLabel,
-                                )}
-                              />
-                            ))}
-                            <button
-                              type="button"
-                              onClick={() => addVariant(service)}
-                              className="btn btn-ghost h-9 w-auto justify-self-start px-3 text-[12.5px]"
-                            >
-                              <PlusIcon className="h-4 w-4" />
-                              Вариант
-                            </button>
+                          <div className="mt-3">
+                            {variantList(category.id, service)}
                           </div>
                         </div>
                       ) : null}
                     </div>
                   );
-                })}
+                  })
+                )}
 
                 <button
                   type="button"
@@ -933,7 +1025,7 @@ export function ServicePricingManager({
                   className="btn btn-ghost h-9 w-auto justify-self-start px-3 text-[12.5px]"
                 >
                   <PlusIcon className="h-4 w-4" />
-                  Услуга
+                  Добавить услугу
                 </button>
               </div>
             ) : null}

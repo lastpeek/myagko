@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { Configurator } from "@/components/configurator";
+import { CopyEmail } from "@/components/copy-email";
 import { GallerySection } from "@/components/gallery-section";
 import { ChevronRightIcon, PhoneIcon } from "@/components/icons";
 import { SiteFooter } from "@/components/site-footer";
@@ -227,15 +228,10 @@ export default async function HomePage() {
                 <PhoneIcon className="h-4 w-4" />
                 {formatPhone(normalized)}
               </a>
-              <a
-                href={`mailto:${company.email}`}
-                className="btn btn-ghost w-auto px-5"
-              >
-                {company.email}
-              </a>
+              <CopyEmail email={company.email} variant="button" />
             </div>
             <p className="caption mt-4">
-              {company.city}. Пишите в любое время — ответим в рабочие часы.
+              Пишите в любое время — ответим в рабочие часы.
             </p>
           </div>
         </section>
@@ -246,6 +242,7 @@ export default async function HomePage() {
         city={company.city}
         phone={normalized}
         email={company.email}
+        territory={company.territory}
       />
 
       <script

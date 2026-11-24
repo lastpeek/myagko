@@ -133,6 +133,7 @@ export default async function PrivacyPage() {
         city={company.city}
         phone={phone}
         email={company.email}
+        territory={company.territory}
       />
     </>
   );

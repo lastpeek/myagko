@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 
 import { apiError, json, requireAdmin } from "@/lib/api";
+import { syncTerritoryCity } from "@/lib/company-text";
 import { getDb } from "@/lib/db";
 import { company } from "@/lib/db/schema";
 import { isSameOrigin } from "@/lib/rate-limit";
@@ -41,14 +42,31 @@ export async function PUT(request: Request) {
     });
   }
 
-  await getDb()
+  const db = getDb();
+  const current = (
+    await db
+      .select({ city: company.city })
+      .from(company)
+      .where(eq(company.id, 1))
+      .limit(1)
+  )[0];
+  const territory =
+    current && current.city !== parsed.data.city
+      ? syncTerritoryCity(
+          current.city,
+          parsed.data.city,
+          parsed.data.territory,
+        )
+      : parsed.data.territory;
+
+  await db
     .update(company)
     .set({
       name: parsed.data.name,
       city: parsed.data.city,
       phone: parsed.data.phone,
       email: parsed.data.email,
-      territory: parsed.data.territory,
+      territory,
       accentColor: accent.theme.light.accent,
       heroTitle: parsed.data.heroTitle,
       heroSubtitle: parsed.data.heroSubtitle,

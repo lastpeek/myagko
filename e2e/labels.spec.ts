@@ -50,7 +50,6 @@ test("подписи стула, кресла и матраса совпадаю
   await page
     .getByRole("button", { name: "Открыть категорию: Стулья" })
     .click();
-  await page.getByRole("button", { name: "Открыть услугу: Стул" }).click();
   await page
     .getByRole("button", { name: "Открыть вариант: Только сиденье" })
     .click();
@@ -63,7 +62,6 @@ test("подписи стула, кресла и матраса совпадаю
   await page
     .getByRole("button", { name: "Открыть категорию: Кресла" })
     .click();
-  await page.getByRole("button", { name: "Открыть услугу: Кресло" }).click();
   await page
     .getByRole("button", { name: "Открыть вариант: Обычное" })
     .click();
@@ -76,7 +74,6 @@ test("подписи стула, кресла и матраса совпадаю
   await page
     .getByRole("button", { name: "Открыть категорию: Матрасы" })
     .click();
-  await page.getByRole("button", { name: "Открыть услугу: Матрас" }).click();
   await page
     .getByRole("button", { name: "Открыть вариант: Односпальный" })
     .click();
@@ -89,7 +86,6 @@ test("подписи стула, кресла и матраса совпадаю
   await page
     .getByRole("button", { name: "Открыть категорию: Стулья" })
     .click();
-  await page.getByRole("button", { name: "Открыть услугу: Стул" }).click();
   await expect(page.getByText("Только сиденье", { exact: true })).toBeVisible();
   await expect(page.getByText("Сиденье и спинка", { exact: true })).toBeVisible();
   await page.screenshot({

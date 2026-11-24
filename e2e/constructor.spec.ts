@@ -22,14 +22,15 @@ test("новая услуга из кабинета считается на са
     .locator('input[aria-label^="Название категории"]')
     .fill("Потолки E2E");
 
-  await categoryCard.getByRole("button", { name: "Услуга" }).click();
-  const serviceCard = categoryCard.locator('[data-testid="service-card"]').last();
-  await serviceCard
+  await categoryCard.getByRole("button", { name: "Добавить услугу" }).click();
+  await expect(categoryCard.locator('[data-testid="service-card"]')).toHaveCount(0);
+  const singleService = categoryCard.locator('[data-testid="single-service-card"]');
+  await singleService
     .locator('input[aria-label^="Название услуги"]')
     .fill("Потолок E2E");
 
-  await serviceCard.getByRole("button", { name: "Вариант" }).click();
-  const variantCard = serviceCard.locator('[data-testid="variant-card"]').last();
+  await categoryCard.getByRole("button", { name: "Вариант" }).click();
+  const variantCard = categoryCard.locator('[data-testid="variant-card"]').last();
   await variantCard.getByLabel("Название").fill("Матовый E2E");
   await variantCard.getByLabel("Единица (шт / м² / м.п.)").fill("м²");
   await variantCard.getByLabel("Подпись параметра").fill("Площадь");
@@ -37,6 +38,17 @@ test("новая услуга из кабинета считается на са
   await variantCard.getByLabel("Мин").fill("1");
   await variantCard.getByLabel("Макс").fill("1000");
   await variantCard.getByLabel("Шаг").fill("0.1");
+
+  // Вторая услуга включает обычное дерево с отдельными строками.
+  await categoryCard.getByRole("button", { name: "Добавить услугу" }).click();
+  await expect(categoryCard.locator('[data-testid="service-card"]')).toHaveCount(2);
+  await expect(
+    categoryCard.getByRole("button", { name: /^(Открыть|Свернуть) услугу:/ }),
+  ).toHaveCount(2);
+  await categoryCard
+    .getByRole("button", { name: "Удалить услугу: Новая услуга" })
+    .click();
+  await expect(categoryCard.locator('[data-testid="service-card"]')).toHaveCount(0);
 
   const categoryCards = page.locator('[data-testid="category-card"]');
   await categoryCards
@@ -91,9 +103,6 @@ test("новая услуга из кабинета считается на са
   await page.goto("/admin/tariffs");
   await page
     .getByRole("button", { name: "Открыть категорию: Потолки E2E" })
-    .click();
-  await page
-    .getByRole("button", { name: "Открыть услугу: Потолок E2E" })
     .click();
   const persistedVariant = page
     .locator('[data-testid="variant-card"]', { hasText: "Матовый E2E" })

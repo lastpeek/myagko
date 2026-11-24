@@ -6,9 +6,7 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
   function currentTheme(): "light" | "dark" {
     const stored = document.documentElement.getAttribute("data-theme");
     if (stored === "light" || stored === "dark") return stored;
-    return window.matchMedia("(prefers-color-scheme: dark)").matches
-      ? "dark"
-      : "light";
+    return "light";
   }
 
   function toggle() {

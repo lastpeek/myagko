@@ -26,8 +26,10 @@ test("услуги и цены: свёрнутое дерево, 1280/390, св�
   // По умолчанию дерево свёрнуто.
   await expect(page.getByRole("button", { name: /^Открыть услугу:/ })).toHaveCount(0);
 
+  // В демо-данных в каждой категории одна услуга — отдельной строки нет.
   await page.getByRole("button", { name: /^Открыть категорию:/ }).first().click();
-  await page.getByRole("button", { name: /^Открыть услугу:/ }).first().click();
+  await expect(page.locator('[data-testid="service-card"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid="single-service-card"]')).toHaveCount(1);
   await page.getByRole("button", { name: /^Открыть вариант:/ }).first().click();
   await expect(page.getByText("Параметр", { exact: true }).first()).toBeVisible();
   await expect(page.getByLabel("Единица (шт / м² / м.п.)").first()).toBeVisible();

@@ -7,11 +7,17 @@ import {
   ArrowDownIcon,
   ArrowUpIcon,
   CameraIcon,
+  CloseIcon,
   PlusIcon,
   SpinnerIcon,
-  TrashIcon,
 } from "@/components/icons";
 import { preparePhoto } from "@/lib/client-image";
+import {
+  deleteGalleryDraft,
+  listGalleryDrafts,
+  putGalleryDraft,
+  type GalleryDraft,
+} from "@/lib/gallery-drafts";
 
 export type GalleryAdminItem = {
   id: string;
@@ -23,7 +29,89 @@ export type GalleryAdminItem = {
   createdAt: string;
 };
 
-type Notice = { kind: "ok" | "error"; text: string } | null;
+type Toast = {
+  kind: "ok" | "error";
+  text: string;
+  retry?: () => void;
+};
+
+type PendingUpload = {
+  id: string;
+  fileName: string;
+  previewUrl: string;
+  status: "preparing" | "queued" | "uploading" | "error";
+  progress: number;
+  error: string | null;
+  file: File;
+  prepared: Blob | null;
+};
+
+type UploadTask = {
+  promise: Promise<Record<string, unknown> | null>;
+  abort: () => void;
+};
+
+function makeId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `upload-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function uploadName(fileName: string): string {
+  return `${fileName.replace(/\.[^.]+$/, "")}.webp`;
+}
+
+function requestUpload(
+  url: string,
+  field: string,
+  blob: Blob,
+  fileName: string,
+  onProgress: (percent: number) => void,
+): UploadTask {
+  const xhr = new XMLHttpRequest();
+  const promise = new Promise<Record<string, unknown> | null>(
+    (resolve, reject) => {
+      xhr.open("POST", url);
+      xhr.responseType = "json";
+      xhr.upload.onprogress = (event) => {
+        if (!event.lengthComputable || event.total === 0) return;
+        onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+      };
+      xhr.onload = () => {
+        const data = (xhr.response ?? null) as
+          | { error?: string; [key: string]: unknown }
+          | null;
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(data);
+          return;
+        }
+        reject(new Error(data?.error ?? "Не удалось загрузить фото"));
+      };
+      xhr.onerror = () => reject(new Error("Связь пропала. Попробуйте ещё раз."));
+      xhr.onabort = () =>
+        reject(new DOMException("Загрузка отменена", "AbortError"));
+
+      const form = new FormData();
+      form.append(field, blob, fileName);
+      xhr.send(form);
+    },
+  );
+
+  return { promise, abort: () => xhr.abort() };
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
+function actionError(error: unknown, fallback: string): string {
+  if (!(error instanceof Error) || !error.message) return fallback;
+  if (/failed to fetch|networkerror|load failed/i.test(error.message)) {
+    return fallback;
+  }
+  return error.message;
+}
 
 export function GalleryManager({
   photos,
@@ -34,68 +122,368 @@ export function GalleryManager({
 }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [items, setItems] = useState(photos);
+  const [pending, setPending] = useState<PendingUpload[]>([]);
+  const [toast, setToast] = useState<Toast | null>(null);
+  const previewUrls = useRef(new Map<string, string>());
+  const aborts = useRef(new Map<string, () => void>());
+  const cancelled = useRef(new Set<string>());
+  const resumed = useRef(false);
+  const uploadQueue = useRef<Promise<void>>(Promise.resolve());
 
-  async function upload(files: FileList | null) {
-    if (!files || files.length === 0) return;
-    setError(null);
+  function showToast(next: Toast) {
+    setToast(next);
+  }
 
-    if (photos.length + files.length > limit) {
-      setError(
-        `Можно загрузить не больше ${limit} фото. Сейчас ${photos.length}.`,
-      );
-      if (inputRef.current) inputRef.current.value = "";
-      return;
+  function updatePending(id: string, patch: Partial<PendingUpload>) {
+    setPending((current) =>
+      current.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry)),
+    );
+  }
+
+  function removePending(id: string) {
+    const previewUrl = previewUrls.current.get(id);
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      previewUrls.current.delete(id);
     }
+    setPending((current) => current.filter((entry) => entry.id !== id));
+  }
 
-    const tooBig = Array.from(files).find((file) => file.size > 10 * 1024 * 1024);
-    if (tooBig) {
-      setError("Файл больше 10 МБ. Сожмите или выберите другой.");
-      if (inputRef.current) inputRef.current.value = "";
-      return;
-    }
+  async function uploadPrepared(id: string, blob: Blob, fileName: string) {
+    if (cancelled.current.has(id)) return;
+    updatePending(id, { status: "uploading", progress: 0, error: null });
+    const task = requestUpload(
+      "/api/admin/gallery",
+      "files",
+      blob,
+      uploadName(fileName),
+      (progress) => updatePending(id, { progress }),
+    );
+    aborts.current.set(id, task.abort);
 
-    setBusy(true);
     try {
-      const form = new FormData();
-      for (const file of Array.from(files)) {
-        const prepared = await preparePhoto(file);
-        if (!prepared.ok) {
-          setError(prepared.error);
-          return;
+      const data = (await task.promise) as
+        | { photos?: GalleryAdminItem[]; error?: string }
+        | null;
+      const created = data?.photos?.[0];
+      if (!created) throw new Error(data?.error ?? "Сервер не вернул фото");
+      if (cancelled.current.has(id)) return;
+
+      removePending(id);
+      setItems((current) => [...current, created]);
+      void deleteGalleryDraft(id).catch(() => undefined);
+      router.refresh();
+    } catch (error) {
+      if (cancelled.current.has(id) || isAbortError(error)) return;
+      updatePending(id, {
+        status: "error",
+        progress: 0,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Не удалось загрузить фото. Попробуйте ещё раз.",
+      });
+    } finally {
+      aborts.current.delete(id);
+    }
+  }
+
+  function enqueueUpload(id: string, blob: Blob, fileName: string) {
+    uploadQueue.current = uploadQueue.current
+      .then(() => uploadPrepared(id, blob, fileName))
+      .catch(() => undefined);
+  }
+
+  async function prepareAndUpload(id: string, file: File, fileName: string) {
+    if (cancelled.current.has(id)) return;
+    updatePending(id, { status: "preparing", progress: 0, error: null });
+
+    const prepared = await preparePhoto(file);
+    if (cancelled.current.has(id)) return;
+    if (!prepared.ok) {
+      updatePending(id, { status: "error", error: prepared.error });
+      return;
+    }
+
+    updatePending(id, { prepared: prepared.photo.blob, status: "queued" });
+    enqueueUpload(id, prepared.photo.blob, fileName);
+  }
+
+  function startUpload(
+    file: File,
+    draftId = makeId(),
+    createdAt = Date.now(),
+  ) {
+    const previewUrl = URL.createObjectURL(file);
+    previewUrls.current.set(draftId, previewUrl);
+    setPending((current) => [
+      ...current,
+      {
+        id: draftId,
+        fileName: file.name,
+        previewUrl,
+        status: "preparing",
+        progress: 0,
+        error: null,
+        file,
+        prepared: null,
+      },
+    ]);
+
+    void putGalleryDraft({
+      id: draftId,
+      file,
+      fileName: file.name,
+      createdAt,
+    })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled.current.has(draftId)) {
+          void prepareAndUpload(draftId, file, file.name);
         }
-        form.append(
-          "files",
-          prepared.photo.blob,
-          `${file.name.replace(/\.[^.]+$/, "")}.webp`,
-        );
+      });
+  }
+
+  function cancelPending(id: string) {
+    cancelled.current.add(id);
+    aborts.current.get(id)?.();
+    removePending(id);
+    void deleteGalleryDraft(id).catch(() => undefined);
+  }
+
+  function retryPending(entry: PendingUpload) {
+    cancelled.current.delete(entry.id);
+    if (entry.prepared) {
+      enqueueUpload(entry.id, entry.prepared, entry.fileName);
+      return;
+    }
+    void prepareAndUpload(entry.id, entry.file, entry.fileName);
+  }
+
+  function pickFiles(files: FileList | null) {
+    const list = files ? Array.from(files) : [];
+    if (inputRef.current) inputRef.current.value = "";
+    if (list.length === 0) return;
+
+    const room = limit - items.length - pending.length;
+    if (room <= 0) {
+      showToast({
+        kind: "error",
+        text: `Можно загрузить не больше ${limit} фото.`,
+      });
+      return;
+    }
+    if (list.length > room) {
+      showToast({
+        kind: "error",
+        text: `Свободно ещё ${room} из ${limit}. Выберите меньше файлов.`,
+      });
+      return;
+    }
+
+    const createdAt = Date.now();
+    list.forEach((file, index) =>
+      startUpload(file, undefined, createdAt + index),
+    );
+  }
+
+  useEffect(() => {
+    if (resumed.current) return;
+    resumed.current = true;
+
+    void (async () => {
+      let drafts: GalleryDraft[] = [];
+      try {
+        drafts = await listGalleryDrafts();
+      } catch {
+        return;
       }
-      const response = await fetch("/api/admin/gallery", {
-        method: "POST",
-        body: form,
+
+      const room = Math.max(0, limit - photos.length);
+      for (const draft of drafts.slice(0, room)) {
+        if (cancelled.current.has(draft.id)) continue;
+        const file =
+          draft.file instanceof File
+            ? draft.file
+            : new File([draft.file], draft.fileName, {
+                type: draft.file.type || "image/jpeg",
+              });
+        const previewUrl = URL.createObjectURL(file);
+        previewUrls.current.set(draft.id, previewUrl);
+        setPending((current) => [
+          ...current,
+          {
+            id: draft.id,
+            fileName: draft.fileName,
+            previewUrl,
+            status: "preparing",
+            progress: 0,
+            error: null,
+            file,
+            prepared: null,
+          },
+        ]);
+        void prepareAndUpload(draft.id, file, draft.fileName);
+      }
+    })();
+    // Черновики читаем один раз при открытии страницы.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function patchPhoto(
+    item: GalleryAdminItem,
+    body: Record<string, unknown>,
+    optimistic: Partial<GalleryAdminItem>,
+  ): Promise<boolean> {
+    setItems((current) =>
+      current.map((entry) =>
+        entry.id === item.id ? { ...entry, ...optimistic } : entry,
+      ),
+    );
+
+    try {
+      const response = await fetch(`/api/admin/gallery/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       });
       const data = (await response.json().catch(() => null)) as
         | { error?: string }
         | null;
-
       if (!response.ok) {
-        setError(data?.error ?? "Не удалось загрузить фото");
-      } else {
-        router.refresh();
+        throw new Error(data?.error ?? "Не удалось сохранить");
       }
-    } catch {
-      setError("Связь пропала. Попробуйте ещё раз.");
-    } finally {
-      setBusy(false);
-      if (inputRef.current) inputRef.current.value = "";
+      router.refresh();
+      return true;
+    } catch (error) {
+      setItems((current) =>
+        current.map((entry) => (entry.id === item.id ? item : entry)),
+      );
+      showToast({
+        kind: "error",
+        text: actionError(
+          error,
+          "Не удалось сохранить. Связь пропала, попробуйте ещё раз.",
+        ),
+      });
+      return false;
     }
   }
 
-  const full = photos.length >= limit;
+  function movePhoto(item: GalleryAdminItem, direction: -1 | 1) {
+    const index = items.findIndex((entry) => entry.id === item.id);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= items.length) return;
+
+    const snapshot = items;
+    const next = [...items];
+    [next[index], next[target]] = [next[target]!, next[index]!];
+    setItems(next);
+
+    void (async () => {
+      try {
+        const response = await fetch(`/api/admin/gallery/${item.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            move: direction === -1 ? "up" : "down",
+          }),
+        });
+        const data = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        if (!response.ok) {
+          throw new Error(data?.error ?? "Не удалось изменить порядок");
+        }
+        router.refresh();
+      } catch (error) {
+        setItems(snapshot);
+        showToast({
+          kind: "error",
+          text: actionError(error, "Не удалось изменить порядок"),
+        });
+      }
+    })();
+  }
+
+  async function deletePhotoRequest(item: GalleryAdminItem, index: number) {
+    try {
+      const response = await fetch(`/api/admin/gallery/${item.id}`, {
+        method: "DELETE",
+      });
+      if (!response.ok && response.status !== 404) {
+        const data = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(data?.error ?? "Не удалось удалить фото");
+      }
+      router.refresh();
+    } catch (error) {
+      setItems((current) => {
+        if (current.some((entry) => entry.id === item.id)) return current;
+        const next = [...current];
+        next.splice(Math.min(index, next.length), 0, item);
+        return next;
+      });
+      showToast({
+        kind: "error",
+        text: actionError(
+          error,
+          "Не удалось удалить фото. Связь пропала, попробуйте ещё раз.",
+        ),
+        retry: () => {
+          setItems((current) => current.filter((entry) => entry.id !== item.id));
+          void deletePhotoRequest(item, index);
+        },
+      });
+    }
+  }
+
+  function deletePhoto(item: GalleryAdminItem) {
+    const index = items.findIndex((entry) => entry.id === item.id);
+    if (index < 0) return;
+    setItems((current) => current.filter((entry) => entry.id !== item.id));
+    void deletePhotoRequest(item, index);
+  }
+
+  const total = items.length + pending.length;
+  const full = total >= limit;
 
   return (
     <div className="grid gap-3">
+      {toast ? (
+        <div
+          role="alert"
+          className="fixed inset-x-3 bottom-3 z-[60] mx-auto flex max-w-[560px] items-center gap-3 rounded-[14px] border border-line bg-surface p-3 shadow-[var(--shadow)]"
+        >
+          <span className="min-w-0 flex-1 text-[13px] leading-5">
+            {toast.text}
+          </span>
+          {toast.retry ? (
+            <button
+              type="button"
+              onClick={() => {
+                const retry = toast.retry;
+                setToast(null);
+                retry?.();
+              }}
+              className="btn-small flex-none"
+            >
+              Повторить
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => setToast(null)}
+            aria-label="Закрыть уведомление"
+            className="grid h-8 w-8 flex-none place-items-center rounded-[8px] text-ink-3 hover:bg-surface-2 hover:text-ink"
+          >
+            <CloseIcon className="h-4 w-4" />
+          </button>
+        </div>
+      ) : null}
+
       <section className="card p-4 md:p-5" aria-labelledby="gallery-upload-title">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -107,13 +495,13 @@ export function GalleryManager({
             </p>
           </div>
           <span className="tabular text-[12.5px] leading-4 text-ink-2">
-            {photos.length} / {limit}
+            {total} / {limit}
           </span>
         </div>
 
         <p className="small mt-2 max-w-[62ch] text-ink-2">
-          Не публикуйте лица клиентов и адреса. Подпись и порядок можно изменить
-          под каждым фото.
+          Фото сжимается в браузере до 1600 px, поэтому загрузка идёт в фоне.
+          Можно закрыть страницу — черновик продолжится при следующем заходе.
         </p>
         <p className="small mt-1 max-w-[62ch] text-ink-2">
           Снимите мебель с одного ракурса и с одинаковым светом — иначе сравнение
@@ -123,12 +511,11 @@ export function GalleryManager({
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          disabled={busy || full}
-          aria-busy={busy}
+          disabled={full}
           className="btn btn-secondary mt-3 w-auto px-4"
         >
-          {busy ? <SpinnerIcon className="h-4 w-4" /> : <PlusIcon className="h-4 w-4" />}
-          {busy ? "Загружаем…" : full ? `Лимит ${limit} фото` : "Загрузить фото"}
+          <PlusIcon className="h-4 w-4" />
+          {full ? `Лимит ${limit} фото` : "Загрузить фото"}
         </button>
 
         <input
@@ -139,17 +526,11 @@ export function GalleryManager({
           aria-label="Загрузить фото работ"
           className="sr-only"
           tabIndex={-1}
-          onChange={(event) => void upload(event.target.files)}
+          onChange={(event) => pickFiles(event.target.files)}
         />
-
-        {error ? (
-          <p role="alert" className="field-error">
-            {error}
-          </p>
-        ) : null}
       </section>
 
-      {photos.length === 0 ? (
+      {items.length === 0 && pending.length === 0 ? (
         <div className="card flex flex-col items-center px-6 py-10 text-center">
           <span className="grid h-12 w-12 place-items-center rounded-full bg-surface-2 text-ink-3">
             <CameraIcon className="h-6 w-6" />
@@ -161,12 +542,24 @@ export function GalleryManager({
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {photos.map((photo, index) => (
+          {items.map((photo, index) => (
             <GalleryCard
               key={photo.id}
               photo={photo}
               index={index}
-              total={photos.length}
+              total={items.length}
+              onPatch={patchPhoto}
+              onMove={movePhoto}
+              onDelete={deletePhoto}
+              onToast={showToast}
+            />
+          ))}
+          {pending.map((entry) => (
+            <PendingCard
+              key={entry.id}
+              entry={entry}
+              onCancel={() => cancelPending(entry.id)}
+              onRetry={() => retryPending(entry)}
             />
           ))}
         </div>
@@ -175,21 +568,143 @@ export function GalleryManager({
   );
 }
 
+function PendingCard({
+  entry,
+  onCancel,
+  onRetry,
+}: {
+  entry: PendingUpload;
+  onCancel: () => void;
+  onRetry: () => void;
+}) {
+  return (
+    <article
+      data-upload-id={entry.id}
+      className="card overflow-hidden"
+      aria-label={`Загрузка фото: ${entry.fileName}`}
+    >
+      <div className="flex items-center justify-between gap-2 px-3 pt-3">
+        <span className="label text-ink-2">Фото после чистки</span>
+        <span className="caption">Загрузка</span>
+      </div>
+
+      <div className="relative mx-3 mt-1.5 aspect-[4/3] overflow-hidden rounded-[12px] bg-surface-2">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={entry.previewUrl}
+          alt={entry.fileName}
+          className="h-full w-full object-cover"
+        />
+        <div className="absolute inset-0 grid place-items-center bg-[rgba(20,19,17,0.42)] p-4 text-center text-white">
+          {entry.status === "error" ? (
+            <span className="grid h-10 w-10 place-items-center rounded-full bg-[var(--danger)] text-[18px] font-semibold">
+              !
+            </span>
+          ) : (
+            <span>
+              <SpinnerIcon className="mx-auto h-6 w-6" />
+              <span className="mt-2 block text-[12px] font-medium">
+                {entry.status === "preparing"
+                  ? "Сжимаем фото…"
+                  : entry.status === "queued"
+                    ? "В очереди"
+                    : `${entry.progress}%`}
+              </span>
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="p-3">
+        {entry.status === "error" ? (
+          <p role="alert" className="field-error">
+            {entry.error}
+          </p>
+        ) : (
+          <div
+            role="progressbar"
+            aria-label="Загрузка фото"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={entry.progress}
+            className="h-1.5 overflow-hidden rounded-full bg-surface-2"
+          >
+            <div
+              className="h-full rounded-full bg-accent transition-[width] duration-150"
+              style={{
+                width: `${
+                  entry.status === "preparing" || entry.status === "queued"
+                    ? 8
+                    : entry.progress
+                }%`,
+              }}
+            />
+          </div>
+        )}
+
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {entry.status === "error" ? (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="btn-small flex-none"
+            >
+              Повторить
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={onCancel}
+            className="btn btn-ghost min-h-9 w-auto px-3 text-[12.5px]"
+          >
+            {entry.status === "error" ? "Убрать" : "Отменить"}
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+type BeforeState = {
+  url: string;
+  pending: boolean;
+  progress: number;
+};
+
 function GalleryCard({
   photo,
   index,
   total,
+  onPatch,
+  onMove,
+  onDelete,
+  onToast,
 }: {
   photo: GalleryAdminItem;
   index: number;
   total: number;
+  onPatch: (
+    photo: GalleryAdminItem,
+    body: Record<string, unknown>,
+    optimistic: Partial<GalleryAdminItem>,
+  ) => Promise<boolean>;
+  onMove: (photo: GalleryAdminItem, direction: -1 | 1) => void;
+  onDelete: (photo: GalleryAdminItem) => void;
+  onToast: (toast: Toast) => void;
 }) {
   const router = useRouter();
   const [caption, setCaption] = useState(photo.caption);
-  const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<Notice>(null);
+  const [savingCaption, setSavingCaption] = useState(false);
+  const [notice, setNotice] = useState<Toast | null>(null);
   const [confirm, setConfirm] = useState(false);
+  const [before, setBefore] = useState<BeforeState | null>(
+    photo.beforePreviewUrl
+      ? { url: photo.beforePreviewUrl, pending: false, progress: 100 }
+      : null,
+  );
   const beforeInputRef = useRef<HTMLInputElement>(null);
+  const beforeAbortRef = useRef<(() => void) | null>(null);
+  const beforeCancelledRef = useRef(false);
 
   const dirty = caption.trim() !== photo.caption;
   const label = photo.caption || `Фото ${index + 1}`;
@@ -203,110 +718,69 @@ function GalleryCard({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [confirm]);
 
-  async function patch(
-    body: Record<string, unknown>,
-    successText: string,
-  ): Promise<boolean> {
-    setBusy(true);
+  async function saveCaption() {
+    setSavingCaption(true);
     setNotice(null);
-    try {
-      const response = await fetch(`/api/admin/gallery/${photo.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = (await response.json().catch(() => null)) as
-        | { error?: string }
-        | null;
-
-      if (!response.ok) {
-        setNotice({
-          kind: "error",
-          text: data?.error ?? "Не удалось сохранить",
-        });
-        return false;
-      }
-
-      setNotice({ kind: "ok", text: successText });
-      router.refresh();
-      return true;
-    } catch {
-      setNotice({ kind: "error", text: "Связь пропала. Попробуйте ещё раз." });
-      return false;
-    } finally {
-      setBusy(false);
+    const value = caption.trim();
+    const ok = await onPatch(photo, { caption: value }, { caption: value });
+    setSavingCaption(false);
+    if (ok) {
+      setNotice({ kind: "ok", text: "Подпись сохранена" });
+      window.setTimeout(() => setNotice(null), 2500);
     }
   }
 
-  async function remove() {
-    setBusy(true);
+  async function uploadBeforeFile(file: File) {
+    const previous = before;
+    const previewUrl = URL.createObjectURL(file);
+    beforeCancelledRef.current = false;
+    setBefore({ url: previewUrl, pending: true, progress: 0 });
     setNotice(null);
+
     try {
-      const response = await fetch(`/api/admin/gallery/${photo.id}`, {
-        method: "DELETE",
-      });
-      if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as
-          | { error?: string }
-          | null;
-        setNotice({ kind: "error", text: data?.error ?? "Не удалось удалить" });
-        setBusy(false);
-        setConfirm(false);
+      const prepared = await preparePhoto(file);
+      if (beforeCancelledRef.current) {
+        setBefore(previous);
         return;
       }
-      setConfirm(false);
-      router.refresh();
-    } catch {
-      setNotice({ kind: "error", text: "Связь пропала. Попробуйте ещё раз." });
-      setBusy(false);
-      setConfirm(false);
-    }
-  }
+      if (!prepared.ok) throw new Error(prepared.error);
 
-  async function uploadBefore(files: FileList | null) {
-    if (!files || files.length === 0) return;
-
-    setNotice(null);
-    setBusy(true);
-    try {
-      const prepared = await preparePhoto(files[0]!);
-      if (!prepared.ok) {
-        setNotice({ kind: "error", text: prepared.error });
-        return;
-      }
-
-      const form = new FormData();
-      form.append("file", prepared.photo.blob, "before.webp");
-
-      const response = await fetch(
+      const task = requestUpload(
         `/api/admin/gallery/${photo.id}/before`,
-        { method: "POST", body: form },
+        "file",
+        prepared.photo.blob,
+        uploadName(file.name),
+        (progress) =>
+          setBefore((current) =>
+            current ? { ...current, progress } : current,
+          ),
       );
-      const data = (await response.json().catch(() => null)) as
-        | { error?: string }
-        | null;
+      beforeAbortRef.current = task.abort;
+      await task.promise;
 
-      if (!response.ok) {
-        setNotice({
-          kind: "error",
-          text: data?.error ?? "Не удалось загрузить фото до",
-        });
-        return;
-      }
-
+      setBefore({ url: previewUrl, pending: false, progress: 100 });
       setNotice({ kind: "ok", text: "Фото до добавлено" });
       router.refresh();
-    } catch {
-      setNotice({ kind: "error", text: "Связь пропала. Попробуйте ещё раз." });
+    } catch (error) {
+      setBefore(previous);
+      if (!isAbortError(error)) {
+        onToast({
+          kind: "error",
+          text: actionError(error, "Не удалось загрузить фото до"),
+          retry: () => void uploadBeforeFile(file),
+        });
+      }
     } finally {
-      setBusy(false);
+      beforeAbortRef.current = null;
       if (beforeInputRef.current) beforeInputRef.current.value = "";
     }
   }
 
   async function removeBefore() {
-    setBusy(true);
+    const previous = before;
+    setBefore(null);
     setNotice(null);
+
     try {
       const response = await fetch(
         `/api/admin/gallery/${photo.id}/before`,
@@ -315,21 +789,18 @@ function GalleryCard({
       const data = (await response.json().catch(() => null)) as
         | { error?: string }
         | null;
-
       if (!response.ok) {
-        setNotice({
-          kind: "error",
-          text: data?.error ?? "Не удалось убрать фото до",
-        });
-        return;
+        throw new Error(data?.error ?? "Не удалось убрать фото до");
       }
-
       setNotice({ kind: "ok", text: "Фото до убрано" });
       router.refresh();
-    } catch {
-      setNotice({ kind: "error", text: "Связь пропала. Попробуйте ещё раз." });
-    } finally {
-      setBusy(false);
+    } catch (error) {
+      setBefore(previous);
+      onToast({
+        kind: "error",
+        text: actionError(error, "Не удалось убрать фото до"),
+        retry: () => void removeBefore(),
+      });
     }
   }
 
@@ -339,71 +810,116 @@ function GalleryCard({
       className="card overflow-hidden"
       aria-label={label}
     >
-      <div className="px-3 pt-3 label text-ink-2">Фото после чистки</div>
-
-      <div className="relative mx-3 mt-1.5 aspect-square overflow-hidden rounded-[12px] bg-surface-2">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={photo.previewUrl}
-          alt={label}
-          loading="lazy"
-          className={`h-full w-full object-cover ${
-            photo.isVisible ? "" : "opacity-60"
-          }`}
-        />
-        {!photo.isVisible ? (
-          <span className="badge badge-muted absolute left-2 top-2">Скрыто</span>
-        ) : null}
-        {photo.hasBefore ? (
-          <span className="badge absolute right-2 top-2">до/после</span>
-        ) : null}
-      </div>
-
-      <div className="mt-3 border-t border-line px-3 py-3">
-        <div className="label text-ink-2">
-          Фото до чистки — необязательно
+      <div className="p-3">
+        <div className="flex items-center justify-between gap-2">
+          <span className="label text-ink-2">Фото после чистки</span>
+          <span className="caption">Обязательно</span>
         </div>
 
-        {photo.hasBefore && photo.beforePreviewUrl ? (
-          <div className="mt-2 flex items-center gap-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={photo.beforePreviewUrl}
-              alt={`Фото до: ${label}`}
-              loading="lazy"
-              className="h-[72px] w-[72px] flex-none rounded-[12px] border border-line object-cover"
-            />
+        <div className="relative mt-1.5 aspect-[4/3] overflow-hidden rounded-[12px] bg-surface-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={photo.previewUrl}
+            alt={label}
+            loading="lazy"
+            className={`h-full w-full object-cover ${
+              photo.isVisible ? "" : "opacity-60"
+            }`}
+          />
+          {!photo.isVisible ? (
+            <span className="badge badge-muted absolute left-2 top-2">
+              Скрыто
+            </span>
+          ) : null}
+          {before && !before.pending ? (
+            <span className="badge absolute bottom-2 left-2">до/после</span>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => setConfirm(true)}
+            aria-label="Удалить фото"
+            title="Удалить фото"
+            className="absolute right-2 top-2 grid h-9 w-9 place-items-center rounded-full border border-white/40 bg-[rgba(20,19,17,0.55)] text-white transition-colors hover:bg-[var(--danger)]"
+          >
+            <CloseIcon className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      <div className="border-t border-line p-3">
+        <div className="flex items-center justify-between gap-2">
+          <span className="label text-ink-2">
+            Фото до чистки — необязательно
+          </span>
+          {before?.pending ? (
+            <button
+              type="button"
+              onClick={() => {
+                beforeCancelledRef.current = true;
+                beforeAbortRef.current?.();
+              }}
+              className="btn-small flex-none"
+            >
+              Отменить
+            </button>
+          ) : before ? (
             <button
               type="button"
               onClick={() => void removeBefore()}
-              disabled={busy}
-              className="btn btn-ghost min-h-11 w-auto px-3 text-[12.5px]"
+              aria-label="Убрать фото до"
+              title="Убрать фото до"
+              className="grid h-8 w-8 flex-none place-items-center rounded-[8px] text-ink-3 hover:bg-surface-2 hover:text-danger"
             >
-              Убрать фото до
+              <CloseIcon className="h-4 w-4" />
             </button>
+          ) : null}
+        </div>
+
+        {before ? (
+          <div className="relative mt-1.5 aspect-[4/3] overflow-hidden rounded-[12px] bg-surface-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={before.url}
+              alt={`Фото до: ${label}`}
+              loading="lazy"
+              className="h-full w-full object-cover"
+            />
+            {before.pending ? (
+              <div className="absolute inset-0 grid place-items-center bg-[rgba(20,19,17,0.42)] text-white">
+                <span className="text-center">
+                  <SpinnerIcon className="mx-auto h-6 w-6" />
+                  <span className="mt-2 block text-[12px] font-medium">
+                    {before.progress > 0
+                      ? `${before.progress}%`
+                      : "Сжимаем фото…"}
+                  </span>
+                </span>
+              </div>
+            ) : null}
           </div>
         ) : (
-          <>
-            <button
-              type="button"
-              onClick={() => beforeInputRef.current?.click()}
-              disabled={busy}
-              className="mt-2 flex min-h-11 w-full items-center justify-center gap-2 rounded-[12px] border border-dashed border-line-strong bg-surface px-3 text-[12.5px] font-medium text-ink-2 transition-colors duration-[180ms] hover:border-accent hover:bg-accent-soft hover:text-accent-ink disabled:opacity-45"
-            >
-              <PlusIcon className="h-4 w-4" />
-              Добавить фото до
-            </button>
-            <input
-              ref={beforeInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              aria-label="Загрузить фото до"
-              className="sr-only"
-              tabIndex={-1}
-              onChange={(event) => void uploadBefore(event.target.files)}
-            />
-          </>
+          <button
+            type="button"
+            onClick={() => beforeInputRef.current?.click()}
+            className="mt-1.5 flex min-h-14 w-full items-center justify-center gap-2 rounded-[12px] border border-dashed border-line-strong bg-surface px-3 text-[12.5px] font-medium text-ink-2 transition-colors duration-[180ms] hover:border-accent hover:bg-accent-soft hover:text-accent-ink"
+          >
+            <PlusIcon className="h-4 w-4" />
+            Добавить фото до
+          </button>
         )}
+
+        <input
+          ref={beforeInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          aria-label="Загрузить фото до"
+          className="sr-only"
+          tabIndex={-1}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void uploadBeforeFile(file);
+          }}
+        />
       </div>
 
       <div className="grid gap-2.5 border-t border-line p-3">
@@ -425,12 +941,16 @@ function GalleryCard({
             />
             <button
               type="button"
-              onClick={() => void patch({ caption: caption.trim() }, "Подпись сохранена")}
-              disabled={!dirty || busy}
+              onClick={() => void saveCaption()}
+              disabled={!dirty || savingCaption}
               aria-label="Сохранить подпись"
               className="btn-small flex-none"
             >
-              {busy ? <SpinnerIcon className="h-3.5 w-3.5" /> : "Сохранить"}
+              {savingCaption ? (
+                <SpinnerIcon className="h-3.5 w-3.5" />
+              ) : (
+                "Сохранить"
+              )}
             </button>
           </div>
           <p className="caption mt-1">{caption.trim().length} / 80</p>
@@ -439,8 +959,8 @@ function GalleryCard({
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => void patch({ move: "up" }, "Порядок обновлён")}
-            disabled={index === 0 || busy}
+            onClick={() => onMove(photo, -1)}
+            disabled={index === 0}
             aria-label="Поднять фото выше"
             className="grid h-11 w-11 place-items-center rounded-[10px] border border-line text-ink-2 hover:border-line-strong hover:text-ink disabled:opacity-40"
           >
@@ -448,8 +968,8 @@ function GalleryCard({
           </button>
           <button
             type="button"
-            onClick={() => void patch({ move: "down" }, "Порядок обновлён")}
-            disabled={index === total - 1 || busy}
+            onClick={() => onMove(photo, 1)}
+            disabled={index === total - 1}
             aria-label="Опустить фото ниже"
             className="grid h-11 w-11 place-items-center rounded-[10px] border border-line text-ink-2 hover:border-line-strong hover:text-ink disabled:opacity-40"
           >
@@ -459,26 +979,17 @@ function GalleryCard({
           <button
             type="button"
             onClick={() =>
-              void patch(
+              void onPatch(
+                photo,
                 { isVisible: !photo.isVisible },
-                photo.isVisible ? "Фото скрыто" : "Фото опубликовано",
+                { isVisible: !photo.isVisible },
               )
             }
-            disabled={busy}
             className="min-h-11 rounded-[10px] border border-line px-3 text-[12.5px] font-medium text-ink-2 hover:border-line-strong hover:text-ink"
           >
             {photo.isVisible ? "Скрыть" : "Показать"}
           </button>
 
-          <button
-            type="button"
-            onClick={() => setConfirm(true)}
-            disabled={busy}
-            aria-label="Удалить фото"
-            className="ml-auto grid h-11 w-11 place-items-center rounded-[10px] text-ink-3 hover:bg-surface-2 hover:text-danger"
-          >
-            <TrashIcon className="h-4 w-4" />
-          </button>
         </div>
 
         {notice ? (
@@ -526,8 +1037,10 @@ function GalleryCard({
               </button>
               <button
                 type="button"
-                onClick={() => void remove()}
-                disabled={busy}
+                onClick={() => {
+                  setConfirm(false);
+                  onDelete(photo);
+                }}
                 className="btn btn-danger w-full sm:w-auto"
               >
                 Удалить

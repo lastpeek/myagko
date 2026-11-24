@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { CheckIcon, SpinnerIcon } from "@/components/icons";
+import { syncTerritoryCity } from "@/lib/company-text";
 import type { CompanySettings } from "@/lib/db/schema";
 
 export function CompanyForm({ company }: { company: CompanySettings }) {
@@ -16,7 +17,17 @@ export function CompanyForm({ company }: { company: CompanySettings }) {
   const [busy, setBusy] = useState(false);
 
   function set<K extends keyof CompanySettings>(key: K, value: CompanySettings[K]) {
-    setValues((current) => ({ ...current, [key]: value }));
+    setValues((current) => {
+      if (key === "city") {
+        const nextCity = String(value);
+        return {
+          ...current,
+          city: nextCity,
+          territory: syncTerritoryCity(current.city, nextCity, current.territory),
+        };
+      }
+      return { ...current, [key]: value };
+    });
   }
 
   async function save(event: React.FormEvent) {
@@ -121,7 +132,7 @@ export function CompanyForm({ company }: { company: CompanySettings }) {
           {field("territory", "Территория выезда", {
             textarea: true,
             rows: 2,
-            hint: "Где работаете и сколько стоит выезд за город",
+            hint: "Где работаете и сколько стоит выезд. Если начинается с города, обновится вместе с ним",
           })}
         </div>
       </section>

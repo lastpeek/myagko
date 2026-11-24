@@ -42,6 +42,7 @@ export default async function CartPage() {
         city={company.city}
         phone={normalized}
         email={company.email}
+        territory={company.territory}
       />
     </>
   );
