@@ -11,6 +11,7 @@ export type GalleryPublicItem = {
   beforeSrc: string | null;
   caption: string;
   alt: string;
+  beforeAlt: string;
 };
 
 export function GallerySection({ items }: { items: GalleryPublicItem[] }) {
@@ -114,6 +115,8 @@ export function GallerySection({ items }: { items: GalleryPublicItem[] }) {
                   <CompareSlider
                     beforeSrc={item.beforeSrc}
                     afterSrc={item.src}
+                    beforeAlt={item.beforeAlt}
+                    afterAlt={item.alt}
                     className="pointer-events-none absolute inset-0 z-20"
                   />
                   <button
@@ -202,6 +205,8 @@ export function GallerySection({ items }: { items: GalleryPublicItem[] }) {
                   <CompareSlider
                     beforeSrc={current.beforeSrc}
                     afterSrc={current.src}
+                    beforeAlt={current.beforeAlt}
+                    afterAlt={current.alt}
                     className="relative h-full w-full"
                   />
                 </div>

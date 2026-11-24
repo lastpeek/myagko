@@ -169,17 +169,20 @@ export default async function HomePage() {
 
         {gallery.length > 0 ? (
           <GallerySection
-            items={gallery.map((photo) => ({
-              id: photo.id,
-              src: `/api/gallery/${photo.id}`,
-              beforeSrc: photo.beforeStorageKey
-                ? `/api/gallery/${photo.id}/before`
-                : null,
-              caption: photo.caption,
-              alt:
-                photo.caption.trim() ||
-                `Наши работы, ${company.city}`,
-            }))}
+            items={gallery.map((photo) => {
+              const caption = photo.caption.trim();
+              const alt = caption || `Химчистка мебели, ${company.city}`;
+              return {
+                id: photo.id,
+                src: `/api/gallery/${photo.id}`,
+                beforeSrc: photo.beforeStorageKey
+                  ? `/api/gallery/${photo.id}/before`
+                  : null,
+                caption: photo.caption,
+                alt,
+                beforeAlt: `${alt} — до чистки`,
+              };
+            })}
           />
         ) : null}
 

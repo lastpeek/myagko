@@ -11,10 +11,14 @@ import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
 export function CompareSlider({
   beforeSrc,
   afterSrc,
+  beforeAlt,
+  afterAlt,
   className = "",
 }: {
   beforeSrc: string;
   afterSrc: string;
+  beforeAlt: string;
+  afterAlt: string;
   className?: string;
 }) {
   const [position, setPosition] = useState(50);
@@ -73,7 +77,7 @@ export function CompareSlider({
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={afterSrc}
-        alt=""
+        alt={afterAlt}
         draggable={false}
         className="absolute inset-0 h-full w-full object-cover"
       />
@@ -81,12 +85,11 @@ export function CompareSlider({
       <div
         className="absolute inset-0"
         style={{ clipPath: `inset(0 ${100 - position}% 0 0)` }}
-        aria-hidden="true"
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={beforeSrc}
-          alt=""
+          alt={beforeAlt}
           draggable={false}
           className="h-full w-full object-cover"
         />

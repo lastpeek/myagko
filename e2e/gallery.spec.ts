@@ -72,6 +72,14 @@ test("галерея работ: загрузка, порядок, скрыти�
     fullPage: true,
   });
 
+  // Без подписи alt — «Химчистка мебели, город».
+  await page.goto("/");
+  await expect(
+    page.locator("[data-gallery-grid] img").first(),
+  ).toHaveAttribute("alt", /^Химчистка мебели, .+/);
+  await page.goto("/admin/gallery");
+  await expect(cards).toHaveCount(3);
+
   const captions = [
     "Диван после чистки",
     "Кресло после чистки",
@@ -95,6 +103,11 @@ test("галерея работ: загрузка, порядок, скрыти�
   expect(await page.locator("[data-gallery-grid] figcaption").allTextContents()).toEqual(
     captions,
   );
+  expect(
+    await page
+      .locator("[data-gallery-grid] img")
+      .evaluateAll((images) => images.map((image) => image.getAttribute("alt"))),
+  ).toEqual(captions);
 
   // Лайтбокс: стрелка, Esc, фон
   await page.getByRole("button", { name: /Открыть фото/ }).first().click();
@@ -353,6 +366,10 @@ test("сравнение до/после: drag, клавиатура, лайтб
   await expect.poll(() => uploadCount()).toBe(2);
 
   const firstCard = page.locator("article[data-photo-id]").first();
+  await firstCard.getByLabel("Подпись", { exact: true }).fill("Диван после чистки");
+  await firstCard.getByRole("button", { name: "Сохранить подпись" }).click();
+  await expect(firstCard.getByText("Подпись сохранена")).toBeVisible();
+
   await firstCard
     .getByLabel("Загрузить фото до")
     .setInputFiles({ name: "pair-before.png", mimeType: "image/png", buffer });
@@ -375,6 +392,15 @@ test("сравнение до/после: drag, клавиатура, лайтб
   await expect(
     page.locator("[data-compare]").getByText("После", { exact: true }),
   ).toBeVisible();
+  const compareImages = page.locator("[data-gallery-grid] [data-compare] img");
+  await expect(compareImages.nth(0)).toHaveAttribute(
+    "alt",
+    "Диван после чистки",
+  );
+  await expect(compareImages.nth(1)).toHaveAttribute(
+    "alt",
+    "Диван после чистки — до чистки",
+  );
   expect(await slider.evaluate((el) => getComputedStyle(el).touchAction)).toBe(
     "none",
   );
