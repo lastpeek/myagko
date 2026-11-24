@@ -68,7 +68,13 @@ export function CompanyForm({ company }: { company: CompanySettings }) {
   function field(
     key: keyof CompanySettings,
     label: string,
-    options: { hint?: string; type?: string; textarea?: boolean; rows?: number } = {},
+    options: {
+      hint?: string;
+      type?: string;
+      textarea?: boolean;
+      rows?: number;
+      maxLength?: number;
+    } = {},
   ) {
     const id = `company-${key}`;
     const error = errors[key as string];
@@ -86,6 +92,7 @@ export function CompanyForm({ company }: { company: CompanySettings }) {
             value={value}
             onChange={(event) => set(key, event.target.value as never)}
             aria-invalid={error ? "true" : undefined}
+            maxLength={options.maxLength}
             className="input resize-none"
           />
         ) : (
@@ -95,6 +102,7 @@ export function CompanyForm({ company }: { company: CompanySettings }) {
             value={value}
             onChange={(event) => set(key, event.target.value as never)}
             aria-invalid={error ? "true" : undefined}
+            maxLength={options.maxLength}
             className="input"
           />
         )}
@@ -126,6 +134,10 @@ export function CompanyForm({ company }: { company: CompanySettings }) {
         <h2 className="h3">Компания</h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           {field("name", "Название")}
+          {field("browserTitle", "Заголовок вкладки браузера", {
+            maxLength: 60,
+            hint: "Необязательно. Пусто — «Название — услуги на выезде в Город»",
+          })}
           {field("city", "Город")}
           {field("phone", "Телефон", { hint: "Показывается на сайте и в подвале" })}
           {field("email", "Почта")}

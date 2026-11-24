@@ -70,6 +70,7 @@ export async function PUT(request: Request) {
       accentColor: accent.theme.light.accent,
       heroTitle: parsed.data.heroTitle,
       heroSubtitle: parsed.data.heroSubtitle,
+      browserTitle: parsed.data.browserTitle,
       otherRequiresPhoto: parsed.data.otherRequiresPhoto,
       updatedAt: new Date(),
     })

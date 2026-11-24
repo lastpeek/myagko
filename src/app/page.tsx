@@ -14,6 +14,7 @@ import {
 import { getDb } from "@/lib/db";
 import { formatRub } from "@/lib/format";
 import { listGalleryPhotos } from "@/lib/gallery";
+import { logoUrl } from "@/lib/logo-assets";
 import { formatPhone, normalizePhone, phoneHref } from "@/lib/phone";
 
 export const dynamic = "force-dynamic";
@@ -57,7 +58,11 @@ export default async function HomePage() {
 
   return (
     <>
-      <SiteHeader name={company.name} city={company.city} />
+      <SiteHeader
+        name={company.name}
+        city={company.city}
+        logoUrl={logoUrl(company.logoKey)}
+      />
 
       <main>
         <div id="pick">
@@ -246,6 +251,7 @@ export default async function HomePage() {
         phone={normalized}
         email={company.email}
         territory={company.territory}
+        logoUrl={logoUrl(company.logoKey)}
       />
 
       <script

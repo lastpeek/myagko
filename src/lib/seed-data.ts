@@ -270,6 +270,7 @@ export async function seedDatabase(
       accentColor: companyConfig.accentColor,
       heroTitle: companyConfig.heroTitle,
       heroSubtitle: companyConfig.heroSubtitle,
+      browserTitle: companyConfig.browserTitle,
       otherRequiresPhoto: companyConfig.otherRequiresPhoto,
     })
     .onConflictDoNothing();

@@ -34,6 +34,8 @@ export type CompanySettings = {
   accentColor: string;
   heroTitle: string;
   heroSubtitle: string;
+  browserTitle: string;
+  logoKey: string | null;
   otherRequiresPhoto: boolean;
 };
 
@@ -138,6 +140,8 @@ export const company = pgTable("company", {
   accentColor: text("accent_color").notNull(),
   heroTitle: text("hero_title").notNull(),
   heroSubtitle: text("hero_subtitle").notNull(),
+  browserTitle: text("browser_title").notNull().default(""),
+  logoKey: text("logo_key"),
   otherRequiresPhoto: boolean("other_requires_photo").notNull().default(true),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()

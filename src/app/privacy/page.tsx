@@ -5,6 +5,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { getCompany } from "@/lib/company";
 import { CONSENT_VERSION } from "@/lib/consent";
+import { logoUrl } from "@/lib/logo-assets";
 import { formatDate } from "@/lib/format";
 import { normalizePhone } from "@/lib/phone";
 
@@ -19,7 +20,12 @@ export default async function PrivacyPage() {
 
   return (
     <>
-      <SiteHeader name={company.name} city={company.city} showCart={false} />
+      <SiteHeader
+        name={company.name}
+        city={company.city}
+        logoUrl={logoUrl(company.logoKey)}
+        showCart={false}
+      />
       <main className="mx-auto w-full max-w-[720px] px-5 pb-12 md:px-8">
         <h1 className="h1">Политика конфиденциальности</h1>
         <p className="caption mt-2">Редакция от {formatDate(CONSENT_VERSION)}</p>
@@ -134,6 +140,7 @@ export default async function PrivacyPage() {
         phone={phone}
         email={company.email}
         territory={company.territory}
+        logoUrl={logoUrl(company.logoKey)}
       />
     </>
   );

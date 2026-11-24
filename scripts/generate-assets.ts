@@ -72,7 +72,7 @@ async function main() {
     .toFile(path.join(process.cwd(), "public", "og.png"));
 
   await fs.writeFile(
-    path.join(process.cwd(), "app-icon.svg"),
+    path.join(OUT, "icon.svg"),
     `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
   <rect width="64" height="64" rx="16" fill="${ACCENT}"/>
   ${glyph(`translate(${(64 - 40) / 2} ${(64 - 40) / 2}) scale(${40 / 24})`, "#FFFFFF")}

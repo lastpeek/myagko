@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 
 import { CompanyForm } from "@/components/admin/company-form";
+import { LogoManager } from "@/components/admin/logo-manager";
 import { TelegramSettings } from "@/components/admin/telegram-settings";
 import { getCompany } from "@/lib/company";
 import { getDb } from "@/lib/db";
+import { logoUrl } from "@/lib/logo-assets";
 import {
   getBotUsername,
   getTelegramLink,
@@ -31,6 +33,7 @@ export default async function AdminCompanyPage() {
       </p>
       <div className="mt-4 grid gap-3">
         <CompanyForm company={company} />
+        <LogoManager initialLogoUrl={logoUrl(company.logoKey)} />
         <TelegramSettings
           initial={{
             configured: isTelegramConfigured(),

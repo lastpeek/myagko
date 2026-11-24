@@ -785,6 +785,8 @@ async function loadCompanyOrDefaults(db: Database): Promise<CompanySettings> {
     accentColor: row.accentColor,
     heroTitle: row.heroTitle,
     heroSubtitle: row.heroSubtitle,
+    browserTitle: row.browserTitle,
+    logoKey: row.logoKey,
     otherRequiresPhoto: row.otherRequiresPhoto,
   };
 }

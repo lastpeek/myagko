@@ -11,6 +11,7 @@ import { getCompany } from "@/lib/company";
 import { territoryLabel } from "@/lib/company-text";
 import { getDb } from "@/lib/db";
 import { formatDate, formatRub, formatTimeRange } from "@/lib/format";
+import { logoUrl } from "@/lib/logo-assets";
 import { getPublicOrder } from "@/lib/orders";
 import { formatDateTime } from "@/lib/time";
 
@@ -85,7 +86,7 @@ export default async function OrderPage({
     <div className="min-h-dvh bg-paper">
       <header className="mx-auto flex w-full max-w-[720px] items-center gap-3 px-5 pb-5 pt-6 md:px-8">
         <Link href="/" className="flex items-center gap-2.5 no-underline">
-          <Logo />
+          <Logo src={logoUrl(company.logoKey)} />
           <span className="text-[15px] font-semibold">{company.name}</span>
         </Link>
         <span className="caption ml-1 hidden sm:block">{company.city}</span>

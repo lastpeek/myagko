@@ -10,12 +10,14 @@ export function SiteFooter({
   phone,
   email,
   territory,
+  logoUrl = null,
 }: {
   name: string;
   city: string;
   phone: string;
   email: string;
   territory: string;
+  logoUrl?: string | null;
 }) {
   const phoneText = formatPhone(phone);
   return (
@@ -23,7 +25,7 @@ export function SiteFooter({
       <div className="mx-auto grid w-full max-w-[1120px] gap-8 px-5 py-10 md:grid-cols-[1.2fr_1fr_1fr] md:px-8 lg:px-10">
         <div>
           <div className="flex items-center gap-2.5">
-            <Logo />
+            <Logo src={logoUrl} />
             <span className="text-[15px] font-semibold">{name}</span>
           </div>
           <p className="small mt-3 max-w-[36ch] text-ink-2">

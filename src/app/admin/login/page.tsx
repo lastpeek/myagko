@@ -7,6 +7,7 @@ import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { getAdminUser } from "@/lib/auth";
 import { getCompany } from "@/lib/company";
+import { logoUrl } from "@/lib/logo-assets";
 
 export const metadata: Metadata = {
   title: "Вход в кабинет",
@@ -22,7 +23,7 @@ export default async function AdminLoginPage() {
   return (
     <div className="min-h-dvh bg-paper">
       <header className="mx-auto flex w-full max-w-[520px] items-center gap-2.5 px-5 py-6">
-        <Logo />
+        <Logo src={logoUrl(company.logoKey)} size={24} radius={7} />
         <span className="text-[15px] font-semibold">{company.name}</span>
         <div className="ml-auto">
           <ThemeToggle />

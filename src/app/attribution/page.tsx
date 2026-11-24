@@ -4,6 +4,7 @@ import Link from "next/link";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { getCompany } from "@/lib/company";
+import { logoUrl } from "@/lib/logo-assets";
 import { normalizePhone } from "@/lib/phone";
 
 export const metadata: Metadata = {
@@ -68,7 +69,12 @@ export default async function AttributionPage() {
 
   return (
     <>
-      <SiteHeader name={company.name} city={company.city} showCart={false} />
+      <SiteHeader
+        name={company.name}
+        city={company.city}
+        logoUrl={logoUrl(company.logoKey)}
+        showCart={false}
+      />
       <main className="mx-auto w-full max-w-[720px] px-5 pb-12 md:px-8">
         <h1 className="h1">Сторонние ресурсы</h1>
         <p className="body mt-2 max-w-[56ch] text-ink-2">
@@ -114,6 +120,7 @@ export default async function AttributionPage() {
         phone={phone}
         email={company.email}
         territory={company.territory}
+        logoUrl={logoUrl(company.logoKey)}
       />
     </>
   );

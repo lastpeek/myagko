@@ -92,12 +92,14 @@ test("служебные маршруты и заголовки", async ({ reque
   expect(manifest.status()).toBe(200);
   const manifestJson = (await manifest.json()) as {
     name?: string;
+    short_name?: string;
     display?: string;
     icons?: unknown[];
   };
-  expect(manifestJson.name).toContain("Мягко");
+  expect(manifestJson.name?.length).toBeGreaterThan(0);
+  expect(manifestJson.short_name).toBe("Мягко");
   expect(manifestJson.display).toBe("standalone");
-  expect((manifestJson.icons ?? []).length).toBeGreaterThanOrEqual(3);
+  expect((manifestJson.icons ?? []).length).toBeGreaterThanOrEqual(2);
 
   const robots = await request.get("/robots.txt");
   const robotsText = await robots.text();

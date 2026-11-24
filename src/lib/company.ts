@@ -74,6 +74,8 @@ export const getCompany = cache(async (): Promise<CompanySettings> => {
     accentColor: row.accentColor,
     heroTitle: row.heroTitle,
     heroSubtitle: row.heroSubtitle,
+    browserTitle: row.browserTitle,
+    logoKey: row.logoKey,
     otherRequiresPhoto: row.otherRequiresPhoto,
   };
 });

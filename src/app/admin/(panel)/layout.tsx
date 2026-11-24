@@ -8,6 +8,7 @@ import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { getAdminUser } from "@/lib/auth";
 import { getCompany } from "@/lib/company";
+import { logoUrl } from "@/lib/logo-assets";
 
 export const metadata: Metadata = {
   title: "Кабинет",
@@ -30,7 +31,7 @@ export default async function AdminPanelLayout({
       <div className="min-h-dvh bg-paper">
         <header className="border-b border-line bg-surface">
           <div className="mx-auto flex h-[52px] w-full max-w-[1120px] items-center gap-2.5 px-5">
-            <Logo />
+            <Logo src={logoUrl(company.logoKey)} size={24} radius={7} />
             <span className="text-[14px] font-semibold">{company.name} · кабинет</span>
             <div className="ml-auto flex items-center gap-2">
               <ThemeToggle />
@@ -60,7 +61,7 @@ export default async function AdminPanelLayout({
     <div className="min-h-dvh bg-paper">
       <header className="border-b border-line bg-surface">
         <div className="mx-auto flex h-[52px] w-full max-w-[1120px] items-center gap-2.5 px-5">
-          <Logo />
+          <Logo src={logoUrl(company.logoKey)} size={24} radius={7} />
           <span className="text-[14px] font-semibold">{company.name} · кабинет</span>
           <span className="caption ml-2 hidden sm:block">{user.email}</span>
           <div className="ml-auto flex items-center gap-2">

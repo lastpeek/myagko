@@ -2,13 +2,19 @@ import Link from "next/link";
 
 import { SiteHeader } from "@/components/site-header";
 import { getCompany } from "@/lib/company";
+import { logoUrl } from "@/lib/logo-assets";
 
 export default async function NotFound() {
   const company = await getCompany();
 
   return (
     <>
-      <SiteHeader name={company.name} city={company.city} showCart={false} />
+      <SiteHeader
+        name={company.name}
+        city={company.city}
+        logoUrl={logoUrl(company.logoKey)}
+        showCart={false}
+      />
       <main className="mx-auto w-full max-w-[560px] px-5 py-12 md:px-8">
         <div className="card p-6 md:p-8">
           <div className="kicker">404</div>

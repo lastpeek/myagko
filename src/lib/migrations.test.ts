@@ -50,6 +50,7 @@ describe("миграции услуг и опций", () => {
         "0004_light_fantastic_four.sql",
         "0005_silent_the_call.sql",
         "0006_moaning_madelyne_pryor.sql",
+        "0007_glorious_junta.sql",
       ]) {
         await applyMigration(client, file);
       }
@@ -58,6 +59,7 @@ describe("миграции услуг и опций", () => {
       await applyMigration(client, "0004_light_fantastic_four.sql");
       await applyMigration(client, "0005_silent_the_call.sql");
       await applyMigration(client, "0006_moaning_madelyne_pryor.sql");
+      await applyMigration(client, "0007_glorious_junta.sql");
       const second = await counts(client);
 
       expect(second).toEqual(first);
@@ -161,6 +163,7 @@ describe("миграции услуг и опций", () => {
         values ('rush', 'Срочность', 'fixed_order', 1000, 30, true);
       `);
       await applyMigration(client, "0006_moaning_madelyne_pryor.sql");
+      await applyMigration(client, "0007_glorious_junta.sql");
 
       await client.exec(`
         update "services" set "is_active" = false where "id" = 'custom';
@@ -171,6 +174,7 @@ describe("миграции услуг и опций", () => {
       await applyMigration(client, "0004_light_fantastic_four.sql");
       await applyMigration(client, "0005_silent_the_call.sql");
       await applyMigration(client, "0006_moaning_madelyne_pryor.sql");
+      await applyMigration(client, "0007_glorious_junta.sql");
       const afterSecondRun = await counts(client);
       expect(afterSecondRun).toEqual(afterDirty);
 

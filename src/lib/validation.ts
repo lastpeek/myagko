@@ -457,6 +457,7 @@ export const updateCompanySchema = z.object({
   accentColor: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/, "HEX-цвет"),
   heroTitle: trimmed(3, 80, "Заголовок первого экрана"),
   heroSubtitle: trimmed(3, 200, "Подзаголовок"),
+  browserTitle: z.string().trim().max(60, "Не длиннее 60 символов").default(""),
   otherRequiresPhoto: z.boolean(),
 });
 

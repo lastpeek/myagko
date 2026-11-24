@@ -15,7 +15,8 @@ export type PhotoStorage = {
   delete(key: string): Promise<void>;
 };
 
-const KEY_PATTERN = /^[a-f0-9-]{36}\.webp$/;
+const KEY_PATTERN =
+  /^[a-f0-9-]{36}(?:\.(?:180|192|512))?\.(?:webp|png)$/;
 
 export function isStorageKey(value: string): boolean {
   return KEY_PATTERN.test(value);

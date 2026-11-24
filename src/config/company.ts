@@ -14,6 +14,8 @@ export const companyConfig = {
   heroTitle: "Что почистим?",
   heroSubtitle:
     "Предварительная цена — сразу. Точную мастер подтвердит после фото.",
+  browserTitle: "",
+  logoKey: null,
   otherRequiresPhoto: true,
 } as const;
 

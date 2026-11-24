@@ -10,10 +10,12 @@ import { useCart, useCartHydrated } from "@/lib/cart-store";
 export function SiteHeader({
   name,
   city,
+  logoUrl = null,
   showCart = true,
 }: {
   name: string;
   city: string;
+  logoUrl?: string | null;
   showCart?: boolean;
 }) {
   const { items } = useCart();
@@ -27,7 +29,7 @@ export function SiteHeader({
         className="flex items-center gap-2.5 rounded-[10px] text-ink no-underline"
         aria-label={`${name} — на главную`}
       >
-        <Logo />
+        <Logo src={logoUrl} size={32} radius={9} />
         <span className="text-[15px] font-semibold tracking-[-0.01em]">{name}</span>
       </Link>
       <span className="caption ml-1 hidden sm:block">{city}</span>

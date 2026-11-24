@@ -4,6 +4,7 @@ import { CartView } from "@/components/cart-view";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { getCompany, getPricingCatalog, getSettings } from "@/lib/company";
+import { logoUrl } from "@/lib/logo-assets";
 import { normalizePhone } from "@/lib/phone";
 
 export const metadata: Metadata = {
@@ -24,7 +25,11 @@ export default async function CartPage() {
 
   return (
     <>
-      <SiteHeader name={company.name} city={company.city} />
+      <SiteHeader
+        name={company.name}
+        city={company.city}
+        logoUrl={logoUrl(company.logoKey)}
+      />
       <main>
         <CartView
           tariffs={catalog.tariffs}
@@ -43,6 +48,7 @@ export default async function CartPage() {
         phone={normalized}
         email={company.email}
         territory={company.territory}
+        logoUrl={logoUrl(company.logoKey)}
       />
     </>
   );
