@@ -298,11 +298,14 @@ test("клиент собирает заказ, владелец согласу�
 
   // Правка тарифа доходит до публичной страницы
   await page.goto("/admin/tariffs");
-  const sofaVariant = page
-    .locator('[data-testid="variant-card"]', { hasText: "2 места" })
-    .first();
-  await sofaVariant.locator("summary").click();
-  await sofaVariant.getByLabel("Цена: Диван 2 места").fill("2600");
+  await page
+    .getByRole("button", { name: "Открыть категорию: Диваны" })
+    .click();
+  await page.getByRole("button", { name: "Открыть услугу: Диван" }).click();
+  await page
+    .getByRole("button", { name: "Открыть вариант: 2 места" })
+    .click();
+  await page.getByLabel("Цена: Диван 2 места").fill("2600");
   await page.getByRole("button", { name: "Сохранить услуги и цены" }).click();
   await expect(page.getByText(/Сохранено/)).toBeVisible();
   await page.goto("/");

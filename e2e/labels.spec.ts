@@ -47,13 +47,49 @@ test("подписи стула, кресла и матраса совпадаю
     page.getByRole("heading", { name: "Услуги и цены", level: 1 }),
   ).toBeVisible();
 
+  await page
+    .getByRole("button", { name: "Открыть категорию: Стулья" })
+    .click();
+  await page.getByRole("button", { name: "Открыть услугу: Стул" }).click();
+  await page
+    .getByRole("button", { name: "Открыть вариант: Только сиденье" })
+    .click();
   await expect(page.getByLabel("Цена: Стул Только сиденье")).toHaveValue("500");
+  await page
+    .getByRole("button", { name: "Открыть вариант: Сиденье и спинка" })
+    .click();
   await expect(page.getByLabel("Цена: Стул Сиденье и спинка")).toHaveValue("700");
+
+  await page
+    .getByRole("button", { name: "Открыть категорию: Кресла" })
+    .click();
+  await page.getByRole("button", { name: "Открыть услугу: Кресло" }).click();
+  await page
+    .getByRole("button", { name: "Открыть вариант: Обычное" })
+    .click();
   await expect(page.getByLabel("Цена: Кресло Обычное")).toHaveValue("1200");
+  await page
+    .getByRole("button", { name: "Открыть вариант: Реклайнер" })
+    .click();
   await expect(page.getByLabel("Цена: Кресло Реклайнер")).toHaveValue("1800");
+
+  await page
+    .getByRole("button", { name: "Открыть категорию: Матрасы" })
+    .click();
+  await page.getByRole("button", { name: "Открыть услугу: Матрас" }).click();
+  await page
+    .getByRole("button", { name: "Открыть вариант: Односпальный" })
+    .click();
   await expect(page.getByLabel("Цена: Матрас Односпальный")).toHaveValue("1500");
+  await page
+    .getByRole("button", { name: "Открыть вариант: Двуспальный" })
+    .click();
   await expect(page.getByLabel("Цена: Матрас Двуспальный")).toHaveValue("2400");
 
+  await page
+    .getByRole("button", { name: "Открыть категорию: Стулья" })
+    .click();
+  await page.getByRole("button", { name: "Открыть услугу: Стул" }).click();
   await expect(page.getByText("Только сиденье", { exact: true })).toBeVisible();
   await expect(page.getByText("Сиденье и спинка", { exact: true })).toBeVisible();
   await page.screenshot({

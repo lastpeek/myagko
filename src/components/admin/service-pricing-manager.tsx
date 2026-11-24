@@ -7,6 +7,7 @@ import {
   ArrowDownIcon,
   ArrowUpIcon,
   CheckIcon,
+  ChevronRightIcon,
   PlusIcon,
   SpinnerIcon,
   TrashIcon,
@@ -73,14 +74,6 @@ export type AdminPricingSettings = {
   outOfTownFee: number;
   roundingStep: number;
 };
-
-const ICON_OPTIONS = [
-  { value: "sofa", label: "Диван" },
-  { value: "armchair", label: "Кресло" },
-  { value: "mattress", label: "Матрас" },
-  { value: "chair", label: "Стул" },
-  { value: "other", label: "Другое" },
-];
 
 function newId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}${Math.random()
@@ -151,7 +144,9 @@ export function ServicePricingManager({
     kind: "ok" | "error";
     text: string;
   }>(null);
-
+  const [openCategoryId, setOpenCategoryId] = useState("");
+  const [openServiceId, setOpenServiceId] = useState("");
+  const [openVariantId, setOpenVariantId] = useState("");
 
   const lineOptions = options.filter((option) => option.kind !== "fixed_order");
   const orderOptions = options.filter(
@@ -272,11 +267,30 @@ export function ServicePricingManager({
     }
   }
 
+  function toggleCategory(id: string) {
+    setOpenCategoryId((current) => (current === id ? "" : id));
+    setOpenServiceId("");
+    setOpenVariantId("");
+  }
+
+  function toggleService(categoryId: string, id: string) {
+    setOpenCategoryId(categoryId);
+    setOpenServiceId((current) => (current === id ? "" : id));
+    setOpenVariantId("");
+  }
+
+  function toggleVariant(categoryId: string, serviceId: string, id: string) {
+    setOpenCategoryId(categoryId);
+    setOpenServiceId(serviceId);
+    setOpenVariantId((current) => (current === id ? "" : id));
+  }
+
   function addCategory() {
+    const id = newId("new-cat");
     setCategories((current) => [
       ...current,
       {
-        id: newId("new-cat"),
+        id,
         label: "Новая категория",
         hint: "",
         icon: "other",
@@ -284,13 +298,17 @@ export function ServicePricingManager({
         isActive: true,
       },
     ]);
+    setOpenCategoryId(id);
+    setOpenServiceId("");
+    setOpenVariantId("");
   }
 
   function addService(categoryId: string) {
+    const id = newId("new-svc");
     setServices((current) => [
       ...current,
       {
-        id: newId("new-svc"),
+        id,
         categoryId,
         label: "Новая услуга",
         hint: "",
@@ -299,10 +317,16 @@ export function ServicePricingManager({
         isActive: true,
       },
     ]);
+    setOpenCategoryId(categoryId);
+    setOpenServiceId(id);
+    setOpenVariantId("");
   }
 
   function addVariant(service: AdminCatalogService) {
     const id = newId("new-var");
+    setOpenCategoryId(service.categoryId);
+    setOpenServiceId(service.id);
+    setOpenVariantId(id);
     setVariants((current) => [
       ...current,
       {
@@ -388,6 +412,9 @@ export function ServicePricingManager({
       } else {
         setVariants((current) => current.filter((entry) => entry.id !== id));
       }
+      if (openCategoryId === id) setOpenCategoryId("");
+      if (openServiceId === id) setOpenServiceId("");
+      if (openVariantId === id) setOpenVariantId("");
       setNotice({ kind: "ok", text: "Удалено." });
     } catch {
       setNotice({ kind: "error", text: "Связь пропала. Попробуйте ещё раз." });
@@ -545,6 +572,7 @@ export function ServicePricingManager({
   function orderButtons(
     kind: "category" | "service" | "variant" | "option",
     id: string,
+    label: string,
   ) {
     const move = (direction: -1 | 1) => {
       if (kind === "category") setCategories((current) => shiftItem(current, id, direction));
@@ -558,7 +586,8 @@ export function ServicePricingManager({
         <button
           type="button"
           onClick={() => move(-1)}
-          aria-label="Выше"
+          aria-label={`Выше: ${label}`}
+          title="Выше"
           className="grid h-8 w-7 place-items-center rounded-[8px] text-ink-3 hover:bg-surface-2 hover:text-ink"
         >
           <ArrowUpIcon className="h-3.5 w-3.5" />
@@ -566,7 +595,8 @@ export function ServicePricingManager({
         <button
           type="button"
           onClick={() => move(1)}
-          aria-label="Ниже"
+          aria-label={`Ниже: ${label}`}
+          title="Ниже"
           className="grid h-8 w-7 place-items-center rounded-[8px] text-ink-3 hover:bg-surface-2 hover:text-ink"
         >
           <ArrowDownIcon className="h-3.5 w-3.5" />
@@ -596,6 +626,18 @@ export function ServicePricingManager({
           <PlusIcon className="h-4 w-4" />
           Категория
         </button>
+        <button
+          type="button"
+          onClick={() =>
+            document
+              .getElementById("price-check")
+              ?.scrollIntoView({ behavior: "smooth", block: "start" })
+          }
+          aria-controls="price-check"
+          className="btn btn-secondary w-auto border-accent px-4 text-accent-ink"
+        >
+          Проверить расчёт
+        </button>
         <p className="caption max-w-[52ch]">
           Дерево: категория → услуга → вариант. Перетаскивайте строки или
           используйте стрелки. Скрытая запись не исчезает из старых заявок.
@@ -606,6 +648,7 @@ export function ServicePricingManager({
         const categoryServices = services.filter(
           (service) => service.categoryId === category.id,
         );
+        const categoryOpen = openCategoryId === category.id;
         return (
           <section
             key={category.id}
@@ -614,162 +657,286 @@ export function ServicePricingManager({
             data-drop-id={category.id}
             className="card overflow-hidden"
           >
-            <div className="flex flex-wrap items-start gap-2 border-b border-line bg-surface-2/40 px-4 py-3">
-              {dragHandle("category", category.id)}
-              <div className="min-w-[180px] flex-1">
-                <input
-                  value={category.label}
-                  onChange={(event) =>
-                    updateCategory(category.id, { label: event.target.value })
-                  }
-                  aria-label={`Название категории: ${category.label}`}
-                  className="input h-10 font-semibold"
-                />
-                <input
-                  value={category.hint}
-                  onChange={(event) =>
-                    updateCategory(category.id, { hint: event.target.value })
-                  }
-                  aria-label={`Подпись категории: ${category.label}`}
-                  placeholder="Короткая подпись"
-                  className="input mt-1.5 h-9 text-[12.5px]"
-                />
+            <div className="border-b border-line bg-surface-2/40 px-3 py-3">
+              <div className="flex items-start gap-2">
+                <button
+                  type="button"
+                  onClick={() => toggleCategory(category.id)}
+                  aria-expanded={categoryOpen}
+                  aria-label={`${categoryOpen ? "Свернуть" : "Открыть"} категорию: ${category.label}`}
+                  title={categoryOpen ? "Свернуть" : "Развернуть"}
+                  className="mt-0.5 grid h-8 w-8 flex-none place-items-center rounded-[8px] text-ink-3 hover:bg-surface-2 hover:text-ink"
+                >
+                  <ChevronRightIcon
+                    className={`h-4 w-4 transition-transform duration-150 ${
+                      categoryOpen ? "rotate-90" : ""
+                    }`}
+                  />
+                </button>
+                {dragHandle("category", category.id)}
+                <button
+                  type="button"
+                  onClick={() => toggleCategory(category.id)}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <span className="block truncate text-[14px] font-semibold">
+                    {category.label}
+                  </span>
+                  <span className="caption block truncate">
+                    {category.hint || "Без подписи"}
+                  </span>
+                </button>
               </div>
-              <select
-                value={category.icon}
-                onChange={(event) =>
-                  updateCategory(category.id, { icon: event.target.value })
-                }
-                aria-label={`Иконка категории: ${category.label}`}
-                className="input h-10 w-[120px]"
-              >
-                {ICON_OPTIONS.map((icon) => (
-                  <option key={icon.value} value={icon.value}>
-                    {icon.label}
-                  </option>
-                ))}
-              </select>
-              <label className="flex min-h-10 items-center gap-2 text-[12px] text-ink-2">
-                <input
-                  type="checkbox"
-                  checked={category.isActive}
-                  onChange={(event) =>
-                    updateCategory(category.id, {
-                      isActive: event.target.checked,
-                    })
-                  }
-                  className="h-4 w-4 accent-[var(--accent)]"
-                />
-                Активна
-              </label>
-              {orderButtons("category", category.id)}
-              <button
-                type="button"
-                onClick={() => void deleteEntity("category", category.id)}
-                aria-label={`Удалить категорию: ${category.label}`}
-                className="grid h-9 w-9 place-items-center rounded-[8px] text-ink-3 hover:bg-surface-2 hover:text-danger"
-              >
-                <TrashIcon className="h-4 w-4" />
-              </button>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <label className="flex min-h-10 items-center gap-2 text-[12px] text-ink-2">
+                  <input
+                    type="checkbox"
+                    checked={category.isActive}
+                    onChange={(event) =>
+                      updateCategory(category.id, {
+                        isActive: event.target.checked,
+                      })
+                    }
+                    className="h-4 w-4 accent-[var(--accent)]"
+                  />
+                  Показывать на сайте
+                </label>
+                {orderButtons("category", category.id, category.label)}
+                <button
+                  type="button"
+                  onClick={() => void deleteEntity("category", category.id)}
+                  aria-label={`Удалить категорию: ${category.label}`}
+                  title="Удалить"
+                  className="grid h-9 w-9 place-items-center rounded-[8px] text-ink-3 hover:bg-surface-2 hover:text-danger"
+                >
+                  <TrashIcon className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
-            <div className="grid gap-3 px-4 py-3">
-              {categoryServices.map((service) => {
-                const serviceVariants = variants.filter(
-                  (variant) => variant.serviceId === service.id,
-                );
-                return (
-                  <div
-                    key={service.id}
-                    data-testid="service-card"
-                    data-drop-kind="service"
-                    data-drop-id={service.id}
-                    className="rounded-[14px] border border-line"
-                  >
-                    <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2.5">
-                      {dragHandle("service", service.id)}
-                      <input
-                        value={service.label}
-                        onChange={(event) =>
-                          updateService(service.id, {
-                            label: event.target.value,
-                          })
-                        }
-                        aria-label={`Название услуги: ${service.label}`}
-                        className="input h-9 min-w-[140px] flex-1 text-[13.5px] font-medium"
-                      />
-                      <input
-                        value={service.hint}
-                        onChange={(event) =>
-                          updateService(service.id, { hint: event.target.value })
-                        }
-                        aria-label={`Подпись услуги: ${service.label}`}
-                        placeholder="Подпись"
-                        className="input h-9 w-[180px] text-[12px]"
-                      />
-                      <label className="flex items-center gap-2 text-[12px] text-ink-2">
-                        <input
-                          type="checkbox"
-                          checked={service.isActive}
-                          onChange={(event) =>
-                            updateService(service.id, {
-                              isActive: event.target.checked,
-                            })
-                          }
-                          className="h-4 w-4 accent-[var(--accent)]"
-                        />
-                        Активна
-                      </label>
-                      {orderButtons("service", service.id)}
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void deleteEntity("service", service.id)
-                        }
-                        aria-label={`Удалить услугу: ${service.label}`}
-                        className="grid h-8 w-8 place-items-center rounded-[8px] text-ink-3 hover:bg-surface-2 hover:text-danger"
-                      >
-                        <TrashIcon className="h-4 w-4" />
-                      </button>
-                    </div>
-
-                    <div className="grid gap-2 px-3 py-2.5">
-                      {serviceVariants.map((variant) => (
-                        <VariantEditor
-                          key={variant.id}
-                          variant={variant}
-                          service={service}
-                          lineOptions={lineOptions}
-                          onChange={(patch) => updateVariant(variant.id, patch)}
-                          onDelete={() =>
-                            void deleteEntity("variant", variant.id)
-                          }
-                          dragHandle={dragHandle("variant", variant.id)}
-                          orderButtons={orderButtons("variant", variant.id)}
-                        />
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => addVariant(service)}
-                        className="btn btn-ghost h-9 w-auto justify-self-start px-3 text-[12.5px]"
-                      >
-                        <PlusIcon className="h-4 w-4" />
-                        Вариант
-                      </button>
-                    </div>
+            {categoryOpen ? (
+              <div className="border-b border-line px-3 py-3">
+                <div className="grid gap-2 min-[900px]:grid-cols-2">
+                  <div>
+                    <label
+                      htmlFor={`cat-name-${category.id}`}
+                      className="label mb-1 block text-ink-2"
+                    >
+                      Название категории
+                    </label>
+                    <input
+                      id={`cat-name-${category.id}`}
+                      value={category.label}
+                      onChange={(event) =>
+                        updateCategory(category.id, {
+                          label: event.target.value,
+                        })
+                      }
+                      aria-label={`Название категории: ${category.label}`}
+                      className="input h-10 w-full font-semibold"
+                    />
                   </div>
-                );
-              })}
+                  <div>
+                    <label
+                      htmlFor={`cat-hint-${category.id}`}
+                      className="label mb-1 block text-ink-2"
+                    >
+                      Подпись категории
+                    </label>
+                    <input
+                      id={`cat-hint-${category.id}`}
+                      value={category.hint}
+                      onChange={(event) =>
+                        updateCategory(category.id, {
+                          hint: event.target.value,
+                        })
+                      }
+                      aria-label={`Подпись категории: ${category.label}`}
+                      placeholder="Короткая подпись"
+                      className="input h-10 w-full text-[13px]"
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
-              <button
-                type="button"
-                onClick={() => addService(category.id)}
-                className="btn btn-ghost h-9 w-auto justify-self-start px-3 text-[12.5px]"
-              >
-                <PlusIcon className="h-4 w-4" />
-                Услуга
-              </button>
-            </div>
+            {categoryOpen ? (
+              <div className="grid gap-3 px-3 py-3">
+                {categoryServices.map((service) => {
+                  const serviceVariants = variants.filter(
+                    (variant) => variant.serviceId === service.id,
+                  );
+                  const serviceOpen = openServiceId === service.id;
+                  return (
+                    <div
+                      key={service.id}
+                      data-testid="service-card"
+                      data-drop-kind="service"
+                      data-drop-id={service.id}
+                      className="rounded-[14px] border border-line"
+                    >
+                      <div className="border-b border-line px-3 py-2.5">
+                        <div className="flex items-start gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              toggleService(category.id, service.id)
+                            }
+                            aria-expanded={serviceOpen}
+                            aria-label={`${serviceOpen ? "Свернуть" : "Открыть"} услугу: ${service.label}`}
+                            title={serviceOpen ? "Свернуть" : "Развернуть"}
+                            className="mt-0.5 grid h-8 w-8 flex-none place-items-center rounded-[8px] text-ink-3 hover:bg-surface-2 hover:text-ink"
+                          >
+                            <ChevronRightIcon
+                              className={`h-4 w-4 transition-transform duration-150 ${
+                                serviceOpen ? "rotate-90" : ""
+                              }`}
+                            />
+                          </button>
+                          {dragHandle("service", service.id)}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              toggleService(category.id, service.id)
+                            }
+                            className="min-w-0 flex-1 text-left"
+                          >
+                            <span className="block truncate text-[13.5px] font-medium">
+                              {service.label}
+                            </span>
+                            {service.hint ? (
+                              <span className="caption block truncate">
+                                {service.hint}
+                              </span>
+                            ) : null}
+                          </button>
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <label className="flex items-center gap-2 text-[12px] text-ink-2">
+                            <input
+                              type="checkbox"
+                              checked={service.isActive}
+                              onChange={(event) =>
+                                updateService(service.id, {
+                                  isActive: event.target.checked,
+                                })
+                              }
+                              className="h-4 w-4 accent-[var(--accent)]"
+                            />
+                            Показывать на сайте
+                          </label>
+                          {orderButtons("service", service.id, service.label)}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void deleteEntity("service", service.id)
+                            }
+                            aria-label={`Удалить услугу: ${service.label}`}
+                            title="Удалить"
+                            className="grid h-8 w-8 place-items-center rounded-[8px] text-ink-3 hover:bg-surface-2 hover:text-danger"
+                          >
+                            <TrashIcon className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {serviceOpen ? (
+                        <div className="px-3 py-3">
+                          <div className="grid gap-2 min-[900px]:grid-cols-2">
+                            <div>
+                              <label
+                                htmlFor={`svc-name-${service.id}`}
+                                className="label mb-1 block text-ink-2"
+                              >
+                                Название услуги
+                              </label>
+                              <input
+                                id={`svc-name-${service.id}`}
+                                value={service.label}
+                                onChange={(event) =>
+                                  updateService(service.id, {
+                                    label: event.target.value,
+                                  })
+                                }
+                                aria-label={`Название услуги: ${service.label}`}
+                                className="input h-9 w-full text-[13.5px] font-medium"
+                              />
+                            </div>
+                            <div>
+                              <label
+                                htmlFor={`svc-hint-${service.id}`}
+                                className="label mb-1 block text-ink-2"
+                              >
+                                Подпись услуги
+                              </label>
+                              <input
+                                id={`svc-hint-${service.id}`}
+                                value={service.hint}
+                                onChange={(event) =>
+                                  updateService(service.id, {
+                                    hint: event.target.value,
+                                  })
+                                }
+                                aria-label={`Подпись услуги: ${service.label}`}
+                                placeholder="Короткая подпись"
+                                className="input h-9 w-full text-[12.5px]"
+                              />
+                            </div>
+                          </div>
+                          <div className="mt-3 grid gap-2">
+                            {serviceVariants.map((variant) => (
+                              <VariantEditor
+                                key={variant.id}
+                                variant={variant}
+                                service={service}
+                                lineOptions={lineOptions}
+                                open={openVariantId === variant.id}
+                                onToggle={() =>
+                                  toggleVariant(
+                                    category.id,
+                                    service.id,
+                                    variant.id,
+                                  )
+                                }
+                                onChange={(patch) =>
+                                  updateVariant(variant.id, patch)
+                                }
+                                onDelete={() =>
+                                  void deleteEntity("variant", variant.id)
+                                }
+                                dragHandle={dragHandle("variant", variant.id)}
+                                orderButtons={orderButtons(
+                                  "variant",
+                                  variant.id,
+                                  variant.variantLabel,
+                                )}
+                              />
+                            ))}
+                            <button
+                              type="button"
+                              onClick={() => addVariant(service)}
+                              className="btn btn-ghost h-9 w-auto justify-self-start px-3 text-[12.5px]"
+                            >
+                              <PlusIcon className="h-4 w-4" />
+                              Вариант
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+
+                <button
+                  type="button"
+                  onClick={() => addService(category.id)}
+                  className="btn btn-ghost h-9 w-auto justify-self-start px-3 text-[12.5px]"
+                >
+                  <PlusIcon className="h-4 w-4" />
+                  Услуга
+                </button>
+              </div>
+            ) : null}
           </section>
         );
       })}
@@ -807,20 +974,33 @@ export function ServicePricingManager({
                 aria-label={`Название опции: ${option.label}`}
                 className="input h-9 min-w-[150px] flex-1 text-[13px]"
               />
-              <select
-                value={option.kind}
-                onChange={(event) =>
-                  updateOption(option.id, {
-                    kind: event.target.value as AdminOption["kind"],
-                  })
-                }
+              <div
+                className="flex flex-none flex-wrap gap-1"
+                role="group"
                 aria-label={`Вид опции: ${option.label}`}
-                className="input h-9 w-[120px] text-[12.5px]"
               >
-                <option value="percent">Процент</option>
-                <option value="fixed">За штуку</option>
-                <option value="fixed_order">За заказ</option>
-              </select>
+                {(
+                  [
+                    ["percent", "Процент"],
+                    ["fixed", "За штуку"],
+                    ["fixed_order", "За заказ"],
+                  ] as const
+                ).map(([kind, label]) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    aria-pressed={option.kind === kind}
+                    onClick={() => updateOption(option.id, { kind })}
+                    className={`min-h-9 rounded-[9px] border px-2.5 text-[12px] ${
+                      option.kind === kind
+                        ? "border-accent bg-accent-soft text-accent-ink"
+                        : "border-line text-ink-2 hover:border-line-strong"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
               <input
                 type="number"
                 min={0}
@@ -847,9 +1027,9 @@ export function ServicePricingManager({
                   }
                   className="h-4 w-4 accent-[var(--accent)]"
                 />
-                Активна
+                Показывать на сайте
               </label>
-              {orderButtons("option", option.id)}
+              {orderButtons("option", option.id, option.label)}
             </div>
           ))}
           {options.length === 0 ? (
@@ -862,7 +1042,7 @@ export function ServicePricingManager({
         <h2 id="rules-title" className="h3">
           Правила расчёта
         </h2>
-        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+        <div className="mt-3 grid gap-3 min-[900px]:grid-cols-3">
           {(
             [
               {
@@ -913,7 +1093,11 @@ export function ServicePricingManager({
         </div>
       </section>
 
-      <section className="card p-4 md:p-5" aria-labelledby="test-title">
+      <section
+        id="price-check"
+        className="card scroll-mt-4 p-4 md:p-5"
+        aria-labelledby="test-title"
+      >
         <h2 id="test-title" className="h3">
           Проверить расчёт
         </h2>
@@ -1083,7 +1267,7 @@ export function ServicePricingManager({
         </div>
       </section>
 
-      <div className="sticky bottom-0 -mx-5 flex flex-wrap items-center gap-3 border-t border-line bg-paper px-5 py-3 md:-mx-6 md:px-6">
+      <div className="flex flex-wrap items-center gap-3 border-t border-line pt-3">
         <button
           type="button"
           onClick={() => void save()}
@@ -1110,6 +1294,8 @@ function VariantEditor({
   variant,
   service,
   lineOptions,
+  open,
+  onToggle,
   onChange,
   onDelete,
   dragHandle,
@@ -1118,218 +1304,264 @@ function VariantEditor({
   variant: AdminVariant;
   service: AdminCatalogService;
   lineOptions: AdminOption[];
+  open: boolean;
+  onToggle: () => void;
   onChange: (patch: Partial<AdminVariant>) => void;
   onDelete: () => void;
   dragHandle: React.ReactNode;
   orderButtons: React.ReactNode;
 }) {
   return (
-    <details
+    <div
       data-testid="variant-card"
       data-drop-kind="variant"
       data-drop-id={variant.id}
       className="rounded-[12px] border border-line bg-surface"
     >
-      <summary className="flex cursor-pointer list-none flex-wrap items-center gap-2 px-3 py-2.5">
+      <div className="flex items-start gap-2 px-3 py-2.5">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          aria-label={`${open ? "Свернуть" : "Открыть"} вариант: ${variant.variantLabel}`}
+          title={open ? "Свернуть" : "Развернуть"}
+          className="mt-0.5 grid h-8 w-8 flex-none place-items-center rounded-[8px] text-ink-3 hover:bg-surface-2 hover:text-ink"
+        >
+          <ChevronRightIcon
+            className={`h-4 w-4 transition-transform duration-150 ${
+              open ? "rotate-90" : ""
+            }`}
+          />
+        </button>
         {dragHandle}
-        <span className="flex min-w-0 flex-1 items-baseline gap-2 text-[13.5px] font-medium">
-          <span>{variant.variantLabel}</span>
-          <span className="caption">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="min-w-0 flex-1 text-left"
+        >
+          <span className="block truncate text-[13.5px] font-medium">
+            {variant.variantLabel}
+          </span>
+          <span className="caption block truncate">
             {variant.isManual
               ? "по фото"
               : `${formatRub(variant.basePrice)} / ${variant.unit}`}
           </span>
-        </span>
+        </button>
         {orderButtons}
         <button
           type="button"
-          onClick={(event) => {
-            event.preventDefault();
-            onDelete();
-          }}
+          onClick={onDelete}
           aria-label={`Удалить вариант: ${variant.variantLabel}`}
-          className="grid h-8 w-8 place-items-center rounded-[8px] text-ink-3 hover:bg-surface-2 hover:text-danger"
+          title="Удалить"
+          className="grid h-8 w-8 flex-none place-items-center rounded-[8px] text-ink-3 hover:bg-surface-2 hover:text-danger"
         >
           <TrashIcon className="h-4 w-4" />
         </button>
-      </summary>
+      </div>
 
-      <div className="grid gap-3 border-t border-line px-3 py-3 sm:grid-cols-2">
-        <div>
-          <label className="label mb-1.5 block text-ink-2" htmlFor={`variant-${variant.id}`}>
-            Название варианта
-          </label>
-          <input
-            id={`variant-${variant.id}`}
-            value={variant.variantLabel}
-            onChange={(event) =>
-              onChange({ variantLabel: event.target.value })
-            }
-            className="input h-10"
-          />
-        </div>
-        <div>
-          <label className="label mb-1.5 block text-ink-2" htmlFor={`unit-${variant.id}`}>
-            Единица
-          </label>
-          <input
-            id={`unit-${variant.id}`}
-            value={variant.unit}
-            onChange={(event) => onChange({ unit: event.target.value })}
-            className="input h-10"
-          />
-        </div>
-        <div>
-          <label className="label mb-1.5 block text-ink-2" htmlFor={`param-${variant.id}`}>
-            Подпись параметра
-          </label>
-          <input
-            id={`param-${variant.id}`}
-            value={variant.parameterLabel}
-            onChange={(event) =>
-              onChange({ parameterLabel: event.target.value })
-            }
-            className="input h-10"
-          />
-        </div>
-        <div>
-          <label className="label mb-1.5 block text-ink-2" htmlFor={`price-${variant.id}`}>
-            Цена за единицу
-          </label>
-          <input
-            id={`price-${variant.id}`}
-            type="number"
-            min={0}
-            value={variant.basePrice ?? ""}
-            disabled={variant.isManual}
-            aria-label={`Цена: ${service.label} ${variant.variantLabel}`}
-            onChange={(event) =>
-              onChange({
-                basePrice:
-                  event.target.value === ""
-                    ? null
-                    : Math.max(0, Number(event.target.value) || 0),
-              })
-            }
-            className="input h-10 tabular"
-          />
-        </div>
-        <div className="grid grid-cols-3 gap-2">
-          {(
-            [
-              ["minValue", "Мин"],
-              ["maxValue", "Макс"],
-              ["step", "Шаг"],
-            ] as const
-          ).map(([field, label]) => (
-            <div key={field}>
+      {open ? (
+        <div className="grid gap-4 border-t border-line px-3 py-3">
+          <div className="grid gap-3 min-[900px]:grid-cols-2">
+            <div>
               <label
                 className="label mb-1.5 block text-ink-2"
-                htmlFor={`${field}-${variant.id}`}
+                htmlFor={`variant-${variant.id}`}
               >
-                {label}
+                Название
               </label>
               <input
-                id={`${field}-${variant.id}`}
-                type="number"
-                min={field === "step" ? 0.01 : 0}
-                step="0.01"
-                value={variant[field]}
+                id={`variant-${variant.id}`}
+                value={variant.variantLabel}
                 onChange={(event) =>
-                  onChange({
-                    [field]: Number(event.target.value) || 0,
-                  })
+                  onChange({ variantLabel: event.target.value })
                 }
-                className="input h-10 tabular"
+                className="input h-10 w-full"
               />
             </div>
-          ))}
-        </div>
-        <div className="flex flex-wrap items-center gap-3 text-[12px] text-ink-2">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={variant.isManual}
-              onChange={(event) =>
-                onChange({
-                  isManual: event.target.checked,
-                  basePrice: event.target.checked ? null : variant.basePrice ?? 0,
-                })
-              }
-              className="h-4 w-4 accent-[var(--accent)]"
-            />
-            По фото
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={variant.requiresPhoto}
-              onChange={(event) =>
-                onChange({ requiresPhoto: event.target.checked })
-              }
-              className="h-4 w-4 accent-[var(--accent)]"
-            />
-            Нужно фото
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={variant.isActive}
-              onChange={(event) =>
-                onChange({ isActive: event.target.checked })
-              }
-              className="h-4 w-4 accent-[var(--accent)]"
-            />
-            Активен
-          </label>
-        </div>
-
-        {!variant.isManual && lineOptions.length > 0 ? (
-          <div className="sm:col-span-2">
-            <div className="label mb-1.5 text-ink-2">Опции варианта</div>
-            <div className="flex flex-wrap gap-2">
-              {lineOptions.map((option) => {
-                const checked = variant.optionIds.includes(option.id);
-                return (
-                  <label
-                    key={option.id}
-                    className={`flex min-h-10 items-center gap-2 rounded-[10px] border px-3 text-[12.5px] ${
-                      checked
-                        ? "border-accent bg-accent-soft"
-                        : "border-line"
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(event) =>
-                        onChange({
-                          optionIds: event.target.checked
-                            ? [...variant.optionIds, option.id]
-                            : variant.optionIds.filter(
-                                (id) => id !== option.id,
-                              ),
-                        })
-                      }
-                      className="h-4 w-4 accent-[var(--accent)]"
-                    />
-                    {option.label}
-                    <span className="text-ink-3">
-                      {option.kind === "percent"
-                        ? `+${option.value}%`
-                        : `+${formatRub(option.value)}`}
-                    </span>
-                  </label>
-                );
-              })}
+            <div>
+              <label
+                className="label mb-1.5 block text-ink-2"
+                htmlFor={`price-${variant.id}`}
+              >
+                Цена за единицу
+              </label>
+              <input
+                id={`price-${variant.id}`}
+                type="number"
+                min={0}
+                step="1"
+                value={variant.basePrice ?? ""}
+                disabled={variant.isManual}
+                aria-label={`Цена: ${service.label} ${variant.variantLabel}`}
+                onChange={(event) =>
+                  onChange({
+                    basePrice:
+                      event.target.value === ""
+                        ? null
+                        : Math.max(0, Number(event.target.value) || 0),
+                  })
+                }
+                className="input h-10 w-full tabular"
+              />
             </div>
           </div>
-        ) : null}
-        <p className="caption sm:col-span-2">
-          Услуга: {service.label}. Перенос варианта в другую услугу — через
-          дерево, без изменения старых заявок.
-        </p>
-      </div>
-    </details>
+
+          <div>
+            <div className="label mb-2 text-ink-2">Параметр</div>
+            <div className="grid gap-3 min-[900px]:grid-cols-2">
+              <div>
+                <label
+                  className="label mb-1.5 block text-ink-2"
+                  htmlFor={`unit-${variant.id}`}
+                >
+                  Единица (шт / м² / м.п.)
+                </label>
+                <input
+                  id={`unit-${variant.id}`}
+                  value={variant.unit}
+                  onChange={(event) => onChange({ unit: event.target.value })}
+                  className="input h-10 w-full"
+                />
+              </div>
+              <div>
+                <label
+                  className="label mb-1.5 block text-ink-2"
+                  htmlFor={`param-${variant.id}`}
+                >
+                  Подпись параметра
+                </label>
+                <input
+                  id={`param-${variant.id}`}
+                  value={variant.parameterLabel}
+                  onChange={(event) =>
+                    onChange({ parameterLabel: event.target.value })
+                  }
+                  className="input h-10 w-full"
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-3 min-[900px]:col-span-2 min-[900px]:grid-cols-3">
+                {(
+                  [
+                    ["minValue", "Мин"],
+                    ["maxValue", "Макс"],
+                    ["step", "Шаг"],
+                  ] as const
+                ).map(([field, label]) => (
+                  <div key={field}>
+                    <label
+                      className="label mb-1.5 block text-ink-2"
+                      htmlFor={`${field}-${variant.id}`}
+                    >
+                      {label}
+                    </label>
+                    <input
+                      id={`${field}-${variant.id}`}
+                      type="number"
+                      min={field === "step" ? 0.01 : 0}
+                      step="0.01"
+                      value={variant[field]}
+                      onChange={(event) =>
+                        onChange({
+                          [field]: Number(event.target.value) || 0,
+                        })
+                      }
+                      className="input h-10 w-full tabular"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 text-[12px] text-ink-2">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={variant.isManual}
+                onChange={(event) =>
+                  onChange({
+                    isManual: event.target.checked,
+                    basePrice: event.target.checked
+                      ? null
+                      : variant.basePrice ?? 0,
+                  })
+                }
+                className="h-4 w-4 accent-[var(--accent)]"
+              />
+              По фото
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={variant.requiresPhoto}
+                onChange={(event) =>
+                  onChange({ requiresPhoto: event.target.checked })
+                }
+                className="h-4 w-4 accent-[var(--accent)]"
+              />
+              Нужно фото
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={variant.isActive}
+                onChange={(event) =>
+                  onChange({ isActive: event.target.checked })
+                }
+                className="h-4 w-4 accent-[var(--accent)]"
+              />
+              Показывать на сайте
+            </label>
+          </div>
+
+          {!variant.isManual && lineOptions.length > 0 ? (
+            <div>
+              <div className="label mb-1.5 text-ink-2">Опции варианта</div>
+              <div className="flex flex-wrap gap-2">
+                {lineOptions.map((option) => {
+                  const checked = variant.optionIds.includes(option.id);
+                  return (
+                    <label
+                      key={option.id}
+                      className={`flex min-h-10 items-center gap-2 rounded-[10px] border px-3 text-[12.5px] ${
+                        checked
+                          ? "border-accent bg-accent-soft"
+                          : "border-line"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(event) =>
+                          onChange({
+                            optionIds: event.target.checked
+                              ? [...variant.optionIds, option.id]
+                              : variant.optionIds.filter(
+                                  (id) => id !== option.id,
+                                ),
+                          })
+                        }
+                        className="h-4 w-4 accent-[var(--accent)]"
+                      />
+                      {option.label}
+                      <span className="text-ink-3">
+                        {option.kind === "percent"
+                          ? `+${option.value}%`
+                          : `+${formatRub(option.value)}`}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+          <p className="caption">
+            Услуга: {service.label}. Перенос варианта в другую услугу — через
+            дерево, без изменения старых заявок.
+          </p>
+        </div>
+      ) : null}
+    </div>
   );
 }

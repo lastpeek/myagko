@@ -30,9 +30,8 @@ test("новая услуга из кабинета считается на са
 
   await serviceCard.getByRole("button", { name: "Вариант" }).click();
   const variantCard = serviceCard.locator('[data-testid="variant-card"]').last();
-  await variantCard.locator("summary").click();
-  await variantCard.getByLabel("Название варианта").fill("Матовый E2E");
-  await variantCard.getByLabel("Единица").fill("м²");
+  await variantCard.getByLabel("Название").fill("Матовый E2E");
+  await variantCard.getByLabel("Единица (шт / м² / м.п.)").fill("м²");
   await variantCard.getByLabel("Подпись параметра").fill("Площадь");
   await variantCard.getByLabel(/^Цена:/).fill("300");
   await variantCard.getByLabel("Мин").fill("1");
@@ -90,10 +89,18 @@ test("новая услуга из кабинета считается на са
   await expect(page.getByText("6 150 ₽").first()).toBeVisible();
 
   await page.goto("/admin/tariffs");
+  await page
+    .getByRole("button", { name: "Открыть категорию: Потолки E2E" })
+    .click();
+  await page
+    .getByRole("button", { name: "Открыть услугу: Потолок E2E" })
+    .click();
   const persistedVariant = page
     .locator('[data-testid="variant-card"]', { hasText: "Матовый E2E" })
     .first();
-  await persistedVariant.locator("summary").click();
+  await persistedVariant
+    .getByRole("button", { name: "Открыть вариант: Матовый E2E" })
+    .click();
   await persistedVariant.getByLabel(/^Цена:/).fill("350");
   await page
     .getByRole("button", { name: "Сохранить услуги и цены" })
